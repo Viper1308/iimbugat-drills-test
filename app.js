@@ -1,0 +1,369 @@
+// UGAT Drills — offline practice app for the IIMB UG Admissions Test (QADI · LR · VARC)
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const KEY = 'ugat.v1';
+const SECS = ['QADI', 'LR', 'VARC'];
+const SEC_NAME = { QADI: 'Quant & DI', LR: 'Logical Reasoning', VARC: 'Verbal' };
+const SEC_WEIGHT = { QADI: 30, LR: 20, VARC: 20 };          // points out of 70 (pre-interview)
+const MOCK_SHAPE = { QADI: { n: 30, mins: 60 }, LR: { n: 15, mins: 45 }, VARC: { n: 15, mins: 30 } };
+const LEVELS = ['New', 'Attempted', 'Familiar', 'Proficient', 'Mastered'];
+const DAY = 86400000;
+const COLORS = ['#1cb0f6', '#ff9600', '#58cc02', '#ce82ff', '#ff4b4b', '#ffc800'];
+
+// ---------- state ----------
+function fresh() { return { v: 1, xp: 0, streak: 0, best: 0, lastDay: null, goal: 100, sound: true, theme: 'auto', q: {}, days: {}, mocks: [], bm: [], topics: {} }; }
+function load() { try { return Object.assign(fresh(), JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { return fresh(); } }
+let S = load();
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { } }
+const dayKey = (t = Date.now()) => { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const today = () => S.days[dayKey()] || { n: 0, c: 0, xp: 0, ms: 0 };
+
+// ---------- data ----------
+let DATA = {}, BY = {}, TOPICS = {}, TQ = {}, LESSONS = {};
+async function loadData() {
+  const get = f => fetch('data/' + f).then(r => r.json());
+  const [a, b, c, p, l] = await Promise.all([get('QADI.json'), get('LR.json'), get('VARC.json'), get('PYQ_2025_verified.json'), get('lessons.json')]);
+  DATA = { QADI: a, LR: b, VARC: c, PYQ: p }; LESSONS = l;
+  for (const sec of SECS) {
+    TOPICS[sec] = [];
+    for (const q of DATA[sec]) { BY[q.id] = q; if (!TQ[q.topic]) { TQ[q.topic] = []; TOPICS[sec].push(q.topic); } TQ[q.topic].push(q); }
+  }
+  for (const q of DATA.PYQ) BY[q.id] = q;
+}
+const shortName = t => t.replace(/^(LR|VARC): /, '').replace(' - ', ' – ');
+const ICONS = [[/Percent/, '％'], [/Interest/, '💰'], [/Ratio/, '⚖️'], [/Average/, '📊'], [/Mixture/, '🧪'], [/Speed/, '🚆'], [/Work/, '🛠️'], [/LCM/, '🔢'], [/Cyclic/, '🔁'],
+[/Linear & Quad/, 'x²'], [/Sequences/, '∑'], [/Coordinate/, '📐'], [/Sets/, '⭕'], [/Functions/, 'ƒ'], [/Modulus/, '|x|'], [/Triangles/, '△'], [/Circles/, '◯'], [/Trigon/, '📏'],
+[/Set Theory/, '🔵'], [/Permut/, '🎲'], [/Statistics/, '📈'], [/DI: Theory/, '🧾'], [/DI: Bar/, '📊'], [/Matrices.*1/, '▦'], [/Matrices.*2/, '▩'], [/Limits/, '∞'], [/Differ/, 'dy'], [/Indefinite/, '∫'], [/Definite/, '∫ᵇ'],
+[/Syllog/, '🧩'], [/Seating/, '🪑'], [/Schedul/, '📅'], [/Rank/, '🏅'], [/Blood/, '👪'], [/Direction/, '🧭'], [/Coding/, '🔐'], [/Series/, '🔢'], [/Alphabet/, '🔤'], [/Operations/, '➕'], [/Sufficiency/, '❓'], [/Statement/, '💬'],
+[/Synonym/, '≈'], [/Antonym/, '≠'], [/Context/, '📝'], [/Meanings/, '📖'], [/Idiom/, '🗣️'], [/One-word/, '1️⃣'], [/Analog/, '🔗'], [/Agreement/, '✅'], [/Preposition/, '📍'], [/Tense/, '⏳'], [/Article/, '🅰️'], [/Error/, '🔍'], [/Confused/, '🤔'], [/Ordering/, '🔀'], [/Odd/, '🚫'], [/Comprehension/, '📚']];
+const iconFor = t => (ICONS.find(([r]) => r.test(t)) || [0, '⭐'])[1];
+
+// ---------- mastery ----------
+function topicStat(t) { const s = S.topics[t]; if (!s) return { n: 0, acc: 0, lvl: 0, c: 0 }; const rec = s.recent || []; const acc = rec.length ? rec.reduce((a, b) => a + b, 0) / rec.length : 0; let lvl = 1; if (s.n >= 60 && rec.length >= 30 && acc >= .85) lvl = 4; else if (s.n >= 40 && acc >= .75) lvl = 3; else if (s.n >= 20 && acc >= .6) lvl = 2; return { n: s.n, acc, lvl, c: s.c }; }
+function recordAnswer(q, ok, ms, hinted) {
+  const now = Date.now(); const k = dayKey();
+  const r = S.q[q.id] || { b: 0, s: 0, r: 0 };
+  r.s++; if (ok) r.r++; r.l = ok ? 1 : 0; r.t = now;
+  r.b = ok ? Math.min(5, (r.b || 0) + (hinted ? 0 : 1)) : 1;
+  r.d = now + [0, 0, DAY, 3 * DAY, 7 * DAY, 21 * DAY][r.b];
+  S.q[q.id] = r;
+  const t = S.topics[q.topic] || { n: 0, c: 0, recent: [] }; t.n++; if (ok) t.c++; t.recent.push(ok ? 1 : 0); if (t.recent.length > 30) t.recent.shift(); S.topics[q.topic] = t;
+  const d = S.days[k] || { n: 0, c: 0, xp: 0, ms: 0 }; d.n++; if (ok) d.c++; d.ms += ms; S.days[k] = d;
+  if (d.n === 10) bumpStreak();
+}
+function bumpStreak() {
+  const y = dayKey(Date.now() - DAY), k = dayKey();
+  if (S.lastDay === k) return;
+  S.streak = S.lastDay === y ? S.streak + 1 : 1; S.lastDay = k; S.best = Math.max(S.best, S.streak); toast(`🔥 ${S.streak}-day streak!`);
+}
+const liveStreak = () => (S.lastDay === dayKey() || S.lastDay === dayKey(Date.now() - DAY)) ? S.streak : 0;
+const playerLevel = () => Math.floor(Math.sqrt(S.xp / 60)) + 1;
+function addXp(n) { const before = playerLevel(); S.xp += n; const d = S.days[dayKey()]; if (d) d.xp += n; if (playerLevel() > before) { toast(`⭐ Level ${playerLevel()}!`); confetti(); sfx('up'); } }
+
+// ---------- selection ----------
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[a[i], a[j]] = [a[j], a[i]]; } return a; };
+const pick = (a, n) => shuffle(a).slice(0, n);
+function dueIds(sec) { const now = Date.now(); return Object.entries(S.q).filter(([id, r]) => BY[id] && (!sec || BY[id].section === sec) && r.d <= now && (r.b < 5 || r.l === 0)).sort((a, b) => a[1].d - b[1].d).map(e => e[0]); }
+function unseenIn(topic) { return (TQ[topic] || []).filter(q => !S.q[q.id]); }
+function buildFor(sec, n, avoid) {
+  const out = []; const used = new Set(avoid);
+  const dues = dueIds(sec).filter(id => !used.has(id)); for (const id of dues.slice(0, Math.ceil(n * .3))) { out.push(id); used.add(id); }
+  let topics = TOPICS[sec].slice(); let guard = 0;
+  while (out.length < n && guard++ < n * 20) {
+    const cand = topics.filter(t => unseenIn(t).some(q => !used.has(q.id)));
+    if (!cand.length) break;
+    const w = cand.map(t => 5 - topicStat(t).lvl); const tot = w.reduce((a, b) => a + b, 0); let x = Math.random() * tot, t = cand[0];
+    for (let i = 0; i < cand.length; i++) { x -= w[i]; if (x <= 0) { t = cand[i]; break; } }
+    const lv = topicStat(t).lvl; const pool = unseenIn(t).filter(q => !used.has(q.id)); const ok = pool.filter(q => q.diff <= lv + 2);
+    const q = pick(ok.length ? ok : pool, 1)[0]; out.push(q.id); used.add(q.id);
+  }
+  if (out.length < n) { const rest = DATA[sec].filter(q => !used.has(q.id)).sort((a, b) => ((S.q[a.id] || {}).b || 0) - ((S.q[b.id] || {}).b || 0)); for (const q of rest.slice(0, n - out.length)) out.push(q.id); }
+  return out;
+}
+function buildDaily(n) {
+  const share = { QADI: .43, LR: .29, VARC: .28 }; const ids = []; let rem = n;
+  SECS.forEach((s, i) => { const k = i === 2 ? rem : Math.round(n * share[s]); rem -= k; ids.push(...buildFor(s, k, ids)); });
+  // interleave in chunks of ~5 so sections alternate
+  const by = {}; SECS.forEach(s => by[s] = shuffle(ids.filter(id => BY[id].section === s))); const out = [];
+  while (out.length < ids.length) for (const s of shuffle(SECS)) out.push(...by[s].splice(0, 5));
+  return out;
+}
+function buildTopicSet(topic, n = 10) {
+  const lv = topicStat(topic).lvl; const all = TQ[topic]; const dues = dueIds().filter(id => BY[id].topic === topic).slice(0, 3);
+  const un = unseenIn(topic).sort((a, b) => Math.abs(a.diff - (lv + 1.5)) - Math.abs(b.diff - (lv + 1.5)) + (Math.random() - .5)).map(q => q.id);
+  let ids = [...dues]; for (const id of un) { if (ids.length >= n) break; if (!ids.includes(id)) ids.push(id); }
+  if (ids.length < n) for (const q of shuffle(all)) { if (ids.length >= n) break; if (!ids.includes(q.id)) ids.push(q.id); }
+  return shuffle(ids);
+}
+
+// ---------- audio / fx ----------
+let ac; function sfx(kind) {
+  if (!S.sound) return; try {
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)(); const seq = { ok: [[660, .08], [880, .12]], bad: [[200, .18]], up: [[523, .1], [659, .1], [784, .1], [1046, .2]], tick: [[440, .04]] }[kind]; let t = ac.currentTime;
+    for (const [f, d] of seq) { const o = ac.createOscillator(), g = ac.createGain(); o.type = kind === 'bad' ? 'sawtooth' : 'sine'; o.frequency.value = f; g.gain.setValueAtTime(.12, t); g.gain.exponentialRampToValueAtTime(.001, t + d); o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + d); t += d; }
+  } catch { }
+}
+function vibrate(p) { try { navigator.vibrate && navigator.vibrate(p); } catch { } }
+function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 1800); }
+function confetti() { const em = ['🎉', '⭐', '🔥', '✨', '💎']; for (let i = 0; i < 24; i++) { const e = document.createElement('div'); e.className = 'confetti'; e.textContent = em[i % em.length]; e.style.left = Math.random() * 100 + 'vw'; e.style.animationDelay = Math.random() * .5 + 's'; document.body.appendChild(e); setTimeout(() => e.remove(), 2400); } }
+
+// ---------- stimulus rendering ----------
+function tableHTML(st) { return `<div class="stim"><h4>${esc(st.title || '')}${st.unit ? ` <span class="small">(${esc(st.unit)})</span>` : ''}</h4><table class="t"><tr>${st.cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr>${st.rows.map(r => `<tr>${r.map((c, i) => `<td${i === 0 ? ' style="text-align:left"' : ''}>${esc(c)}</td>`).join('')}</tr>`).join('')}</table></div>`; }
+function legend(names) { return `<div class="legend">${names.map((n, i) => `<span><i style="background:${COLORS[i % COLORS.length]}"></i>${esc(n)}</span>`).join('')}</div>`; }
+function barSVG(st) {
+  const W = 640, H = 270, L = 40, R = 40, T = 20, B = 36;
+  const pct = st.series.map(s => /%/.test(s.name)); const hasLine = pct.some(Boolean) && pct.some(x => !x);
+  const bars = st.series.filter((s, i) => !(hasLine && pct[i])), lines = st.series.filter((s, i) => hasLine && pct[i]);
+  const n = st.labels.length; const stacked = !!st.stacked;
+  const tot = stacked ? st.labels.map((_, i) => bars.reduce((a, s) => a + s.values[i], 0)) : null;
+  const max = Math.ceil(Math.max(...(stacked ? tot : bars.flatMap(s => s.values))) * 1.12 / 10) * 10 || 10;
+  const x0 = L, pw = W - L - R, ph = H - T - B; const gw = pw / n; const bw = stacked ? gw * .55 : gw * .8 / bars.length;
+  let g = ''; for (let k = 0; k <= 4; k++) { const y = T + ph - ph * k / 4; g += `<line x1="${x0}" x2="${W - R}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="${x0 - 6}" y="${y + 4}" font-size="11" text-anchor="end">${Math.round(max * k / 4)}</text>`; }
+  bars.forEach((s, si) => st.labels.forEach((lb, i) => {
+    let v = s.values[i], x, y, h;
+    if (stacked) { const below = bars.slice(0, si).reduce((a, t) => a + t.values[i], 0); h = ph * v / max; y = T + ph - ph * below / max - h; x = x0 + gw * i + (gw - bw) / 2; }
+    else { h = ph * v / max; y = T + ph - h; x = x0 + gw * i + gw * .1 + bw * si; }
+    g += `<rect x="${x}" y="${y}" width="${bw - 2}" height="${h}" rx="3" fill="${COLORS[si % COLORS.length]}"/>`;
+    if (n * bars.length <= 24 && h > 14) g += `<text x="${x + (bw - 2) / 2}" y="${stacked ? y + h / 2 + 4 : y - 4}" font-size="10" text-anchor="middle" ${stacked ? 'fill="#fff" style="fill:#fff"' : ''}>${v}</text>`;
+  }));
+  st.labels.forEach((lb, i) => g += `<text x="${x0 + gw * i + gw / 2}" y="${H - 14}" font-size="11" text-anchor="middle">${esc(lb)}</text>`);
+  if (lines.length) { const lm = Math.ceil(Math.max(...lines.flatMap(s => s.values)) * 1.2 / 5) * 5; lines.forEach(s => { const pts = s.values.map((v, i) => [x0 + gw * i + gw / 2, T + ph - ph * v / lm]); g += `<polyline fill="none" stroke="#ff4b4b" stroke-width="3" points="${pts.map(p => p.join(',')).join(' ')}"/>` + pts.map((p, i) => `<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="#ff4b4b"/><text x="${p[0]}" y="${p[1] - 8}" font-size="10" text-anchor="middle" style="fill:#ff4b4b">${s.values[i]}%</text>`).join(''); g += `<text x="${W - R + 6}" y="${T + 10}" font-size="10">right: %</text>`; }); }
+  return `<div class="stim"><h4>${esc(st.title)}${st.unit ? ` (${esc(st.unit)})` : ''}</h4><svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg>${legend(st.series.map(s => s.name))}</div>`;
+}
+function lineSVG(st) {
+  const W = 640, H = 260, L = 40, R = 20, T = 20, B = 34; const n = st.labels.length; const all = st.series.flatMap(s => s.values); const max = Math.ceil(Math.max(...all) * 1.15 / 10) * 10, min = 0;
+  const pw = W - L - R, ph = H - T - B; let g = '';
+  for (let k = 0; k <= 4; k++) { const y = T + ph - ph * k / 4; g += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="var(--line)"/><text x="${L - 6}" y="${y + 4}" font-size="11" text-anchor="end">${Math.round(max * k / 4)}</text>`; }
+  st.series.forEach((s, si) => { const pts = s.values.map((v, i) => [L + pw * (n === 1 ? .5 : i / (n - 1)), T + ph - ph * (v - min) / (max - min)]); g += `<polyline fill="none" stroke="${COLORS[si % COLORS.length]}" stroke-width="3" points="${pts.map(p => p.join(',')).join(' ')}"/>` + pts.map((p, i) => `<circle cx="${p[0]}" cy="${p[1]}" r="4.5" fill="${COLORS[si % COLORS.length]}"/><text x="${p[0]}" y="${p[1] - 10}" font-size="11" text-anchor="middle">${s.values[i]}</text>`).join(''); });
+  st.labels.forEach((lb, i) => g += `<text x="${L + pw * (n === 1 ? .5 : i / (n - 1))}" y="${H - 12}" font-size="11" text-anchor="middle">${esc(lb)}</text>`);
+  return `<div class="stim"><h4>${esc(st.title)}</h4><svg viewBox="0 0 ${W} ${H}" width="100%">${g}</svg>${st.series.length > 1 ? legend(st.series.map(s => s.name)) : ''}</div>`;
+}
+function pieSVG(st, size = 220) {
+  const tot = st.values.reduce((a, b) => a + b, 0); let a0 = -Math.PI / 2, g = ''; const c = size / 2, r = size / 2 - 8;
+  st.values.forEach((v, i) => { const a1 = a0 + 2 * Math.PI * v / tot; const large = a1 - a0 > Math.PI ? 1 : 0; const p = (a, rr) => [c + rr * Math.cos(a), c + rr * Math.sin(a)];
+    const [x0, y0] = p(a0, r), [x1, y1] = p(a1, r), [tx, ty] = p((a0 + a1) / 2, r * .65);
+    g += st.values.length === 1 ? `<circle cx="${c}" cy="${c}" r="${r}" fill="${COLORS[0]}"/>` : `<path d="M${c},${c} L${x0},${y0} A${r},${r} 0 ${large} 1 ${x1},${y1} Z" fill="${COLORS[i % COLORS.length]}" stroke="var(--card)" stroke-width="2"/>`;
+    if (v / tot > .05) g += `<text x="${tx}" y="${ty + 4}" font-size="12" font-weight="800" text-anchor="middle" style="fill:#fff">${v}%</text>`; a0 = a1; });
+  return `<div style="text-align:center">${st.title ? `<h4 style="margin:0 0 6px">${esc(st.title)}</h4>` : ''}<svg viewBox="0 0 ${size} ${size}" width="${size}" style="max-width:100%">${g}</svg>${legend(st.labels.map((l, i) => `${l} (${st.values[i]}%)`))}${st.note ? `<div class="small">${esc(st.note)}</div>` : ''}</div>`;
+}
+function stimHTML(st) {
+  if (!st) return '';
+  switch (st.type) {
+    case 'table': return tableHTML(st);
+    case 'tables2': return st.tables.map(tableHTML).join('');
+    case 'bar': return barSVG(st);
+    case 'line': return lineSVG(st);
+    case 'pie': return `<div class="stim">${pieSVG(st)}</div>`;
+    case 'pies2': return `<div class="stim"><h4>${esc(st.title)}</h4><div class="row" style="flex-wrap:wrap">${st.pies.map(p => `<div style="min-width:220px">${pieSVG(p, 190)}</div>`).join('')}</div></div>`;
+    case 'passage': return `<div class="stim"><h4>${esc(st.title || 'Passage')}</h4><div class="passage">${esc(st.text)}</div></div>`;
+    case 'di_data': { const d = st.data;
+      if (d.categories) return barSVG({ title: d.title, labels: d.categories, series: Object.entries(d.series).map(([name, values]) => ({ name, values })) });
+      if (d.pie_share_of_state_population_pct) { const ks = Object.keys(d.pie_share_of_state_population_pct); return `<div class="stim">${pieSVG({ title: 'Share of population (%)', labels: ks, values: ks.map(k => d.pie_share_of_state_population_pct[k]) })}${barSVG({ title: 'Male share of each state (%)', labels: ks, series: [{ name: 'Male %', values: ks.map(k => d.bar_male_pct[k]) }] })}</div>`; }
+      return ''; }
+  }
+  return '';
+}
+
+// ---------- views ----------
+const app = $('#app'); let SES = null, EX = null, timerH = null;
+function setView(html) { clearInterval(timerH); app.innerHTML = html; window.scrollTo(0, 0); }
+function topBar(back) { const d = today(); const p = Math.min(100, Math.round(d.n / S.goal * 100)); return `<div class="top">${back ? `<button class="back" data-go="${back}">✕</button>` : ''}<div class="grow"><b style="font-size:18px">UGAT Drills</b></div><span class="chip fire">🔥 ${liveStreak()}</span><span class="chip xp">⚡ ${S.xp}</span><div class="ring" style="--p:${p}" title="Daily goal"><span>${d.n}</span></div></div>`; }
+let homeSec = 'QADI';
+function lvlBadge(l) { return `<span class="lvl l${l}">${LEVELS[l]}</span>`; }
+function crowns(l) { return `<div class="crowns">${[1, 2, 3, 4].map(i => `<i class="${l >= i ? 'on' : ''}"></i>`).join('')}</div>`; }
+function viewHome() {
+  const d = today(); const left = Math.max(0, S.goal - d.n); const dues = dueIds().length;
+  const nodes = (homeSec === 'PYQ') ? '' : TOPICS[homeSec].map(t => { const st = topicStat(t); const tot = TQ[t].length; const seen = TQ[t].filter(q => S.q[q.id]).length; return `<button class="node ${st.lvl >= 4 ? 'done' : st.lvl === 0 ? 'start' : ''}" data-topic="${esc(t)}"><div class="ico">${iconFor(t)}</div><div class="meta"><div class="name">${esc(shortName(t))}</div><div class="sub">${seen}/${tot} seen${st.n ? ` · ${Math.round(st.acc * 100)}% recent` : ''}</div>${crowns(st.lvl)}</div>${lvlBadge(st.lvl)}</button>`; }).join('');
+  const pyq = DATA.PYQ.filter(q => !q.needs_image);
+  setView(`${topBar()}
+  <div class="hero"><h2>${left ? `${left} more to hit today's goal` : 'Daily goal complete! 🎉'}</h2><p>${dues ? `${dues} questions due for review · ` : ''}Mixed practice weighted like the real test (30/20/20 points).</p><button class="btn white" data-act="daily">${left ? `Start daily ${left > 100 ? 100 : left}` : 'Keep going — 50 more'}</button></div>
+  <div class="row"><button class="btn blue" data-act="mock">Mock test</button><button class="btn ghost" data-go="#/review">Review (${reviewIds().length})</button></div>
+  <div class="tabs">${SECS.map(s => `<button class="tab ${homeSec === s ? 'on' : ''}" data-sec="${s}">${s}</button>`).join('')}<button class="tab ${homeSec === 'PYQ' ? 'on' : ''}" data-sec="PYQ">2025 Paper</button></div>
+  ${homeSec === 'PYQ' ? `<div class="card"><h3>Official 2025 paper</h3><p class="small">${pyq.length} verified questions (${DATA.PYQ.length - pyq.length} that depend on a figure are left out).</p><button class="btn" data-act="pyq">Practise in order</button></div>` : `<div class="path">${nodes}</div>`}
+  <div class="row" style="margin-top:12px"><button class="btn ghost" data-go="#/stats">Stats</button><button class="btn ghost" data-go="#/settings">Settings</button></div>`);
+}
+function reviewIds() { const wrong = Object.entries(S.q).filter(([id, r]) => BY[id] && r.l === 0).map(e => e[0]); return [...new Set([...wrong, ...S.bm.filter(id => BY[id])])]; }
+function viewTopic(t) {
+  const L = LESSONS[t]; const st = topicStat(t); const left = TQ[t].filter(q => !S.q[q.id]).length;
+  setView(`${topBar('#/')}
+  <div style="padding:18px 0 4px"><div class="small">${esc(TQ[t][0].section)} · ${lvlBadge(st.lvl)}</div><h1 style="font-size:26px;margin-top:4px">${iconFor(t)} ${esc(shortName(t))}</h1><p class="small">${L ? esc(L.blurb) : ''}</p></div>
+  <div class="section-title">Learn first</div><div class="cards-lesson">${(L ? L.cards : []).map(c => `<div class="lcard"><h4>${esc(c.h)}</h4><p>${esc(c.t)}</p></div>`).join('')}</div>
+  <div class="card"><div class="row"><div><b>${TQ[t].length}</b><div class="small">questions</div></div><div><b>${left}</b><div class="small">unseen</div></div><div><b>${st.n ? Math.round(st.acc * 100) + '%' : '–'}</b><div class="small">recent accuracy</div></div></div></div>
+  <div class="foot"><div class="in row"><button class="btn" data-act="topic" data-t="${esc(t)}">Practise 10</button><button class="btn blue" data-act="topic20" data-t="${esc(t)}">Practise 25</button></div></div>`);
+}
+// ----- practice session -----
+function startSession(ids, kind, title) { if (!ids.length) return toast('Nothing to practise yet'); SES = { ids, i: 0, kind, title, combo: 0, best: 0, xp: 0, ok: 0, n: 0, sel: null, checked: false, hint: 0, hinted: false, t0: Date.now(), wrong: [] }; location.hash = '#/play'; renderQ(); }
+function renderQ() {
+  if (!SES) return viewHome();
+  if (SES.i >= SES.ids.length) return finishSession();
+  const q = BY[SES.ids[SES.i]]; const pct = Math.round(SES.i / SES.ids.length * 100);
+  const bm = S.bm.includes(q.id);
+  setView(`<div class="top"><button class="back" data-act="quit">✕</button><div class="progress"><div style="width:${pct}%"></div></div><span class="chip fire">🔥 ${SES.combo}</span></div>
+  <div class="qwrap"><div class="small">${esc(shortName(q.topic))} · ${SES.i + 1}/${SES.ids.length} <button class="link" data-act="bm" style="float:right">${bm ? '★ Saved' : '☆ Save'}</button></div>
+  ${stimHTML(q.stim)}<div class="stem">${esc(q.stem)}</div>
+  <div id="opts">${q.options.map((o, i) => `<button class="opt" data-opt="${i}"><span class="k">${i + 1}</span><span>${esc(o)}</span></button>`).join('')}</div>
+  <div id="hints"></div><button class="link" data-act="hint">💡 Hint</button></div>
+  <div class="foot" id="foot"><div class="in"><button class="btn" id="check" disabled>Check</button></div></div>`);
+  SES.sel = null; SES.checked = false; SES.hint = 0; SES.hinted = false; SES.q0 = Date.now();
+}
+function pickOpt(i) { if (!SES || SES.checked) return; SES.sel = i; document.querySelectorAll('.opt').forEach((b, j) => b.classList.toggle('sel', j === i)); const c = $('#check'); if (c) { c.disabled = false; } }
+function checkAns() {
+  if (!SES || SES.checked || SES.sel == null) return; SES.checked = true; const q = BY[SES.ids[SES.i]]; const ok = SES.sel === q.answer; const ms = Date.now() - SES.q0;
+  document.querySelectorAll('.opt').forEach((b, j) => { b.classList.remove('sel'); if (j === q.answer) b.classList.add('ok'); else if (j === SES.sel) b.classList.add('bad'); });
+  let gain = 0;
+  if (ok) { SES.combo++; SES.best = Math.max(SES.best, SES.combo); gain = SES.hinted ? 5 : 10 + Math.min(10, Math.max(0, SES.combo - 2) * 2) + (ms < (q.secs || 60) * 500 ? 3 : 0); SES.ok++; sfx('ok'); vibrate(15); }
+  else { SES.combo = 0; SES.wrong.push(q.id); sfx('bad'); vibrate([30, 40, 30]); document.querySelector('.qwrap').classList.add('shake'); }
+  SES.n++; SES.xp += gain; recordAnswer(q, ok, ms, SES.hinted); if (gain) addXp(gain); save();
+  if (ok && SES.combo >= 3) { const c = document.createElement('div'); c.className = 'combo'; c.textContent = `🔥 ${SES.combo} in a row`; document.body.appendChild(c); setTimeout(() => c.remove(), 1200); }
+  const last = SES.i + 1 >= SES.ids.length; const cp = (SES.i + 1) % 10 === 0 && !last;
+  const f = $('#foot'); f.className = 'foot ' + (ok ? 'ok' : 'bad');
+  f.innerHTML = `<div class="in"><div class="fb ${ok ? 'ok' : 'bad'}"><b>${ok ? ['Correct!', 'Nice!', 'Spot on!', 'Brilliant!'][Math.floor(Math.random() * 4)] : 'Not quite'}</b>${gain ? `<span>+${gain} XP</span>` : ''}</div><div class="sol">${esc(q.solution)}</div>${cp ? `<div class="small" style="margin:6px 0">✅ ${SES.i + 1} done — ${SES.ok}/${SES.n} right</div>` : ''}<button class="btn ${ok ? '' : 'red'}" data-act="next" style="margin-top:10px">${last ? 'Finish' : 'Continue'}</button></div>`;
+}
+function nextQ() { if (!SES) return; SES.i++; renderQ(); }
+function showHint() { if (!SES || SES.checked) return; const q = BY[SES.ids[SES.i]]; const hs = q.hints && q.hints.length ? q.hints : ['Re-read the question and eliminate options that cannot be right.']; if (SES.hint >= hs.length) return toast('No more hints'); $('#hints').insertAdjacentHTML('beforeend', `<div class="hint">💡 ${esc(hs[SES.hint])}</div>`); SES.hint++; SES.hinted = true; }
+function finishSession() {
+  const s = SES; const acc = s.n ? Math.round(s.ok / s.n * 100) : 0; const bonus = s.n >= 10 ? 20 : 0; if (bonus) addXp(bonus); save(); if (acc >= 80 && s.n >= 10) { confetti(); sfx('up'); }
+  setView(`${topBar()}<div class="summary"><div class="big">${acc >= 80 ? '🏆' : acc >= 60 ? '💪' : '📚'}</div><h1>${acc >= 80 ? 'Excellent!' : acc >= 60 ? 'Good work' : 'Keep going'}</h1><p class="small">${esc(s.title || '')}</p>
+  <div class="stats3"><div class="stat"><b>${acc}%</b><span>Accuracy</span></div><div class="stat"><b>+${s.xp + bonus}</b><span>XP</span></div><div class="stat"><b>${s.best}</b><span>Best combo</span></div></div>
+  ${s.wrong.length ? `<button class="btn orange" data-act="retry">Retry ${s.wrong.length} missed</button>` : ''}<div style="height:10px"></div><button class="btn" data-go="#/">Done</button></div>`);
+  const w = s.wrong; SES = null; EX = null; window._retry = w;
+}
+// ----- review -----
+function viewReview() { const ids = reviewIds(); setView(`${topBar('#/')}<h2 style="margin:18px 0 6px">Review</h2><p class="small">Questions you missed last time, plus the ones you saved.</p>${ids.length ? `<button class="btn" data-act="reviewgo">Practise ${Math.min(ids.length, 20)}</button><div class="list card">${ids.slice(0, 40).map(id => `<div class="it"><span>${esc(shortName(BY[id].topic))}</span><span class="small">${S.bm.includes(id) ? '★' : '✗'}</span></div>`).join('')}</div>` : '<div class="card">Nothing to review — nice.</div>'}`); }
+// ----- mock test -----
+function buildMock(secs) {
+  const sections = []; for (const s of secs) { const sh = MOCK_SHAPE[s]; const topics = TOPICS[s]; const used = new Set(); const ids = [];
+    const unseen = DATA[s].filter(q => !S.q[q.id]); const poolBase = unseen.length >= sh.n * 2 ? unseen : DATA[s];
+    const byT = {}; poolBase.forEach(q => (byT[q.topic] = byT[q.topic] || []).push(q.id));
+    const tl = shuffle(Object.keys(byT)); let i = 0; while (ids.length < sh.n && i < 500) { const t = tl[i++ % tl.length]; const id = pick(byT[t].filter(x => !used.has(x)), 1)[0]; if (id) { used.add(id); ids.push(id); } }
+    sections.push({ sec: s, ids: shuffle(ids), mins: sh.mins * (ids.length / sh.n) }); }
+  return sections;
+}
+function startMock(secs, label, custom) {
+  const sections = custom || buildMock(secs);
+  EX = { label, sections, si: 0, qi: 0, ans: {}, mark: {}, t0: Date.now(), secStart: Date.now(), results: [] }; location.hash = '#/exam'; renderExam(); timerH = setInterval(tickExam, 1000);
+}
+function renderExam() {
+  if (!EX) return viewHome(); const sec = EX.sections[EX.si]; const id = sec.ids[EX.qi]; const q = BY[id];
+  setView(`<div class="top"><div class="grow"><b>${esc(sec.sec)}</b> <span class="small">Q${EX.qi + 1}/${sec.ids.length}</span></div><span class="timer" id="tm">--:--</span></div>
+  <div class="qwrap">${stimHTML(q.stim)}<div class="stem">${esc(q.stem)}</div>${q.options.map((o, i) => `<button class="opt ${EX.ans[id] === i ? 'sel' : ''}" data-xopt="${i}"><span class="k">${i + 1}</span><span>${esc(o)}</span></button>`).join('')}
+  <div class="pal">${sec.ids.map((x, i) => `<button data-xq="${i}" class="${EX.ans[x] != null ? 'ans' : ''} ${EX.mark[x] ? 'mark' : ''} ${i === EX.qi ? 'cur' : ''}">${i + 1}</button>`).join('')}</div>
+  <div class="small">Correct +1 · wrong −⅓ · skipped 0</div></div>
+  <div class="foot"><div class="in"><div class="row"><button class="btn ghost" data-xa="clear">Clear</button><button class="btn ghost" data-xa="mark">${EX.mark[id] ? 'Unmark' : 'Mark'}</button><button class="btn ${EX.qi + 1 < sec.ids.length ? '' : 'orange'}" data-xa="${EX.qi + 1 < sec.ids.length ? 'next' : 'submit'}">${EX.qi + 1 < sec.ids.length ? 'Next' : 'Submit section'}</button></div></div></div>`);
+  tickExam(true);
+}
+function tickExam(first) {
+  if (!EX) return; const sec = EX.sections[EX.si]; const left = Math.max(0, sec.mins * 60000 - (Date.now() - EX.secStart)); const el = $('#tm'); if (el) { const m = Math.floor(left / 60000), s = Math.floor(left % 60000 / 1000); el.textContent = `${m}:${String(s).padStart(2, '0')}`; }
+  if (left <= 0 && !first) { toast('Time up for this section'); submitSection(); }
+}
+function submitSection() {
+  const sec = EX.sections[EX.si]; let c = 0, w = 0, k = 0; sec.ids.forEach(id => { const a = EX.ans[id]; if (a == null) k++; else if (a === BY[id].answer) c++; else w++; });
+  const raw = c - w / 3; const n = sec.ids.length;
+  EX.results.push({ sec: sec.sec, n, c, w, k, raw, points: Math.max(0, raw / n) * (SEC_WEIGHT[sec.sec] || 0), maxPts: SEC_WEIGHT[sec.sec] || 0 });
+  sec.ids.forEach(id => { const a = EX.ans[id]; if (a != null) recordAnswer(BY[id], a === BY[id].answer, 60000, false); }); save();
+  if (EX.si + 1 < EX.sections.length) { EX.si++; EX.qi = 0; EX.secStart = Date.now(); renderExam(); } else finishExam();
+}
+function finishExam() {
+  clearInterval(timerH); const r = EX.results; const tot = r.reduce((a, b) => a + b.points, 0), mx = r.reduce((a, b) => a + b.maxPts, 0);
+  S.mocks.push({ t: Date.now(), label: EX.label, res: r.map(x => ({ sec: x.sec, raw: +x.raw.toFixed(2), n: x.n })), points: +tot.toFixed(1), max: mx }); save(); const ex = EX; window._exam = ex;
+  setView(`${topBar()}<div class="summary"><div class="big">📝</div><h1>${esc(ex.label)} complete</h1><p class="small">Indicative score: ${tot.toFixed(1)} / ${mx} points</p>
+  ${r.map(x => `<div class="card" style="text-align:left"><b>${x.sec}</b> <span class="small">· ${x.points.toFixed(1)}/${x.maxPts} pts</span><div class="small">${x.c} correct · ${x.w} wrong · ${x.k} skipped · raw ${x.raw.toFixed(2)} / ${x.n}</div>${x.raw <= 0 ? '<div class="small" style="color:var(--red)">Raw score must be positive in every section to qualify.</div>' : ''}<div class="bar"><div style="width:${Math.max(0, x.raw / x.n * 100)}%"></div></div></div>`).join('')}
+  <button class="btn orange" data-act="exreview">Review all answers</button><div style="height:10px"></div><button class="btn" data-go="#/">Done</button></div>`);
+  EX = null; confetti();
+}
+function viewExamReview() {
+  const ex = window._exam; if (!ex) return viewHome(); const items = ex.sections.flatMap(s => s.ids);
+  setView(`${topBar('#/')}<h2 style="margin:16px 0">Answer review</h2>${items.map((id, i) => { const q = BY[id], a = ex.ans[id]; const st = a == null ? 'Skipped' : a === q.answer ? 'Correct' : 'Wrong'; return `<div class="card">${stimHTML(q.stim)}<div class="small">${i + 1} · ${esc(shortName(q.topic))} · <b style="color:${st === 'Correct' ? 'var(--green-d)' : st === 'Wrong' ? 'var(--red)' : 'var(--muted)'}">${st}</b></div><div class="stem" style="font-size:16px">${esc(q.stem)}</div>${q.options.map((o, j) => `<div class="opt ${j === q.answer ? 'ok' : j === a ? 'bad' : ''}" style="margin:6px 0"><span class="k">${j + 1}</span><span>${esc(o)}</span></div>`).join('')}<div class="sol small">${esc(q.solution)}</div></div>`; }).join('')}`);
+}
+// ----- stats / settings -----
+function viewStats() {
+  const days = []; for (let i = 13; i >= 0; i--) days.push(S.days[dayKey(Date.now() - i * DAY)] || { n: 0 });
+  const tot = Object.values(S.days).reduce((a, d) => ({ n: a.n + d.n, c: a.c + d.c, ms: a.ms + (d.ms || 0) }), { n: 0, c: 0, ms: 0 });
+  const secRows = SECS.map(s => { let n = 0, c = 0; TOPICS[s].forEach(t => { const x = S.topics[t]; if (x) { n += x.n; c += x.c; } }); const seen = DATA[s].filter(q => S.q[q.id]).length; return `<div style="margin:10px 0"><b>${s}</b> <span class="small">${seen}/${DATA[s].length} seen · ${n ? Math.round(c / n * 100) : 0}% accuracy</span><div class="bar"><div style="width:${seen / DATA[s].length * 100}%"></div></div></div>`; }).join('');
+  const weak = Object.keys(TQ).map(t => ({ t, s: topicStat(t) })).filter(x => x.s.n >= 8).sort((a, b) => a.s.acc - b.s.acc).slice(0, 6);
+  setView(`${topBar('#/')}<h2 style="margin:18px 0 8px">Your progress</h2>
+  <div class="stats3"><div class="stat"><b>${tot.n}</b><span>Answered</span></div><div class="stat"><b>${tot.n ? Math.round(tot.c / tot.n * 100) : 0}%</b><span>Accuracy</span></div><div class="stat"><b>${tot.n ? Math.round(tot.ms / tot.n / 1000) : 0}s</b><span>Avg time</span></div></div>
+  <div class="stats3"><div class="stat"><b>🔥 ${liveStreak()}</b><span>Streak</span></div><div class="stat"><b>${S.best}</b><span>Best streak</span></div><div class="stat"><b>Lv ${playerLevel()}</b><span>${S.xp} XP</span></div></div>
+  <div class="card"><h3>Last 14 days</h3><div class="heatmap">${days.map(d => `<i class="${d.n >= S.goal ? 'a3' : d.n >= S.goal / 2 ? 'a2' : d.n ? 'a1' : ''}" title="${d.n}"></i>`).join('')}</div></div>
+  <div class="card"><h3>Coverage</h3>${secRows}</div>
+  <div class="card"><h3>Weakest topics</h3>${weak.length ? weak.map(x => `<div class="it" style="display:flex;justify-content:space-between;padding:6px 0"><span>${esc(shortName(x.t))}</span><b>${Math.round(x.s.acc * 100)}%</b></div>`).join('') : '<span class="small">Answer a few more questions to see this.</span>'}</div>
+  <div class="card"><h3>Mock tests</h3>${S.mocks.length ? S.mocks.slice(-6).reverse().map(m => `<div class="it" style="display:flex;justify-content:space-between;padding:6px 0"><span>${new Date(m.t).toLocaleDateString()} · ${esc(m.label)}</span><b>${m.points}/${m.max}</b></div>`).join('') : '<span class="small">No mock tests yet.</span>'}</div>`);
+}
+function exportASAP() {
+  const out = { app: 'ugat-drills', version: 1, exported: new Date().toISOString(), streak: liveStreak(), dailyGoal: S.goal, today: today(), due: dueIds().length,
+    topics: Object.keys(TQ).map(t => { const st = topicStat(t); return { id: t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''), name: t, section: TQ[t][0].section, level: st.lvl, levelName: LEVELS[st.lvl], answered: st.n, recentAccuracy: +st.acc.toFixed(2) }; }), mocks: S.mocks };
+  download('ugat-asap-export.json', JSON.stringify(out, null, 2));
+}
+function download(name, text) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
+function viewSettings() {
+  setView(`${topBar('#/')}<h2 style="margin:18px 0 8px">Settings</h2>
+  <div class="card"><label class="sw">Daily goal<select id="goal">${[50, 100, 150, 200].map(g => `<option ${S.goal === g ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
+  <label class="sw">Sound<input type="checkbox" id="snd" ${S.sound ? 'checked' : ''}></label>
+  <label class="sw">Theme<select id="theme">${['auto', 'light', 'dark'].map(g => `<option ${S.theme === g ? 'selected' : ''}>${g}</option>`).join('')}</select></label></div>
+  <div class="card"><h3>Your data</h3><p class="small">Progress is stored on this device only.</p><div class="row"><button class="btn ghost" data-act="backup">Back up</button><button class="btn ghost" data-act="restore">Restore</button></div><div style="height:10px"></div><button class="btn blue" data-act="asap">Export for ASAP</button><div style="height:10px"></div><button class="btn red" data-act="reset">Reset all progress</button></div>
+  <p class="small" style="text-align:center">Questions: ${DATA.QADI.length} QADI · ${DATA.LR.length} LR · ${DATA.VARC.length} Verbal · ${DATA.PYQ.length} official</p>`);
+}
+function applyTheme() { const t = S.theme; if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t); }
+
+// ---------- events ----------
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-go],[data-act],[data-topic],[data-sec],[data-opt],[data-xopt],[data-xq],[data-xa]'); if (!t) return; const d = t.dataset;
+  if (d.go) { if (d.go === '#/' ) { SES = null; EX && 0; } location.hash = d.go; return route(); }
+  if (d.sec) { homeSec = d.sec; return viewHome(); }
+  if (d.topic) { location.hash = '#/topic/' + encodeURIComponent(d.topic); return route(); }
+  if (d.opt != null) return pickOpt(+d.opt);
+  if (d.xopt != null) { const id = EX.sections[EX.si].ids[EX.qi]; EX.ans[id] = +d.xopt; return renderExam(); }
+  if (d.xq != null) { EX.qi = +d.xq; return renderExam(); }
+  if (d.xa) { const sec = EX.sections[EX.si], id = sec.ids[EX.qi];
+    if (d.xa === 'clear') { delete EX.ans[id]; return renderExam(); } if (d.xa === 'mark') { EX.mark[id] = !EX.mark[id]; return renderExam(); }
+    if (d.xa === 'next') { EX.qi++; return renderExam(); }
+    if (d.xa === 'submit') { const un = sec.ids.filter(x => EX.ans[x] == null).length; if (un && !confirm(`${un} unanswered. Submit this section?`)) return; return submitSection(); } }
+  switch (d.act) {
+    case 'daily': { const left = Math.max(0, S.goal - today().n); return startSession(buildDaily(left ? Math.min(left, 100) : 50), 'daily', 'Daily practice'); }
+    case 'topic': return startSession(buildTopicSet(d.t, 10), 'topic', shortName(d.t));
+    case 'topic20': return startSession(buildTopicSet(d.t, 25), 'topic', shortName(d.t));
+    case 'next': return nextQ(); case 'hint': return showHint();
+    case 'bm': { const id = SES.ids[SES.i]; S.bm = S.bm.includes(id) ? S.bm.filter(x => x !== id) : [...S.bm, id]; save(); t.textContent = S.bm.includes(id) ? '★ Saved' : '☆ Save'; return; }
+    case 'quit': if (SES && SES.n && !confirm('End this session? Your progress is saved.')) return; if (SES && SES.n) return finishSession(); SES = null; location.hash = '#/'; return route();
+    case 'retry': return startSession(shuffle(window._retry || []), 'retry', 'Missed questions');
+    case 'mock': return mockMenu();
+    case 'mockfull': return startMock(SECS, 'Full mock');
+    case 'mockQADI': return startMock(['QADI'], 'QADI sectional'); case 'mockLR': return startMock(['LR'], 'LR sectional'); case 'mockVARC': return startMock(['VARC'], 'Verbal sectional');
+    case 'pyq': { const ids = DATA.PYQ.filter(q => !q.needs_image).map(q => q.id); return startSession(ids, 'pyq', '2025 official paper'); }
+    case 'pyqtimed': { const secs = SECS.map(s => ({ sec: s, ids: DATA.PYQ.filter(q => q.section === s && !q.needs_image).map(q => q.id), mins: MOCK_SHAPE[s].mins })).filter(s => s.ids.length); return startMock(null, '2025 official paper', secs); }
+    case 'reviewgo': return startSession(pick(reviewIds(), 20), 'review', 'Review');
+    case 'exreview': return viewExamReview();
+    case 'backup': return download('ugat-backup.json', JSON.stringify(S));
+    case 'restore': { const i = document.createElement('input'); i.type = 'file'; i.accept = 'application/json'; i.onchange = () => { const f = i.files[0]; if (!f) return; f.text().then(x => { try { S = Object.assign(fresh(), JSON.parse(x)); save(); toast('Restored'); viewSettings(); } catch { toast('Invalid file'); } }); }; return i.click(); }
+    case 'asap': return exportASAP();
+    case 'reset': if (confirm('Erase all progress on this device?')) { S = fresh(); save(); toast('Reset'); viewSettings(); } return;
+  }
+});
+document.addEventListener('change', e => { const t = e.target; if (t.id === 'goal') { S.goal = +t.value; save(); } if (t.id === 'snd') { S.sound = t.checked; save(); } if (t.id === 'theme') { S.theme = t.value; save(); applyTheme(); } });
+document.addEventListener('keydown', e => {
+  if (!SES || location.hash !== '#/play') return; if (['1', '2', '3', '4'].includes(e.key)) pickOpt(+e.key - 1);
+  if (e.key === 'Enter') { if (SES.checked) nextQ(); else checkAns(); }
+});
+document.addEventListener('click', e => { if (e.target.id === 'check') checkAns(); }, true);
+function mockMenu() {
+  setView(`${topBar('#/')}<h2 style="margin:18px 0 8px">Mock tests</h2><p class="small">Timed, with the real negative marking (−⅓) and section times. Questions are drawn from topics you have not seen where possible.</p>
+  <div class="card"><h3>Full mock · 60 questions · 135 min</h3><p class="small">QADI 30 (60 min) · LR 15 (45 min) · Verbal 15 (30 min)</p><button class="btn" data-act="mockfull">Start full mock</button></div>
+  <div class="card"><h3>Sectionals</h3><div class="row"><button class="btn blue" data-act="mockQADI">QADI</button><button class="btn blue" data-act="mockLR">LR</button><button class="btn blue" data-act="mockVARC">Verbal</button></div></div>
+  <div class="card"><h3>2025 official paper</h3><p class="small">Timed, original questions that don't need a figure.</p><button class="btn orange" data-act="pyqtimed">Start timed paper</button></div>`);
+}
+function route() {
+  const h = location.hash || '#/'; clearInterval(timerH);
+  if (h === '#/play') return SES ? renderQ() : (location.hash = '#/', viewHome());
+  if (h === '#/exam') { if (EX) { timerH = setInterval(tickExam, 1000); return renderExam(); } location.hash = '#/'; return viewHome(); }
+  if (h.startsWith('#/topic/')) return viewTopic(decodeURIComponent(h.slice(8)));
+  if (h === '#/stats') return viewStats(); if (h === '#/settings') return viewSettings(); if (h === '#/review') return viewReview();
+  return viewHome();
+}
+window.addEventListener('hashchange', route);
+(async () => {
+  applyTheme();
+  try { await loadData(); } catch (e) { app.innerHTML = '<div class="boot">Could not load data. Open this app through a web server (see README).</div>'; return; }
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => { });
+  window.__ugat = { S: () => S, DATA, BY, buildDaily, startSession };
+  route();
+})();
