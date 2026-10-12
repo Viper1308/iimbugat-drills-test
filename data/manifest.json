@@ -1,0 +1,284 @@
+{
+ "QADI": {
+  "total": 2548,
+  "tiers": {
+   "1": 502,
+   "2": 764,
+   "3": 1282
+  },
+  "topics": {
+   "Percentages, Profit & Loss, Discount": {
+    "1": 25,
+    "2": 14,
+    "3": 41
+   },
+   "Simple & Compound Interest": {
+    "1": 22,
+    "2": 9,
+    "3": 36
+   },
+   "Ratio, Proportion & Partnership": {
+    "1": 17,
+    "2": 15,
+    "3": 24
+   },
+   "Averages": {
+    "1": 17,
+    "2": 7,
+    "3": 24
+   },
+   "Mixtures & Alligations": {
+    "1": 22,
+    "2": 10,
+    "3": 24
+   },
+   "Time, Speed & Distance": {
+    "1": 26,
+    "2": 10,
+    "3": 48
+   },
+   "Time & Work": {
+    "1": 12,
+    "2": 24,
+    "3": 36
+   },
+   "Number System: LCM/HCF & Divisibility": {
+    "1": 25,
+    "2": 8,
+    "3": 36
+   },
+   "Number System: Cyclicity, Remainders, Factorials": {
+    "1": 11,
+    "2": 17,
+    "3": 24
+   },
+   "Algebra: Linear & Quadratic Equations, Polynomials": {
+    "1": 21,
+    "2": 13,
+    "3": 24
+   },
+   "Algebra: Sequences & Series": {
+    "1": 32,
+    "2": 18,
+    "3": 48
+   },
+   "Algebra: Coordinate Geometry": {
+    "1": 22,
+    "2": 16,
+    "3": 48
+   },
+   "Algebra: Sets & Relations": {
+    "2": 19,
+    "1": 11,
+    "3": 24
+   },
+   "Algebra: Functions": {
+    "2": 42,
+    "1": 12,
+    "3": 48
+   },
+   "Algebra: Modulus & Logarithms": {
+    "2": 25,
+    "1": 9,
+    "3": 41
+   },
+   "Geometry: Triangles & Polygons": {
+    "2": 12,
+    "1": 16,
+    "3": 42
+   },
+   "Geometry: Circles & Mensuration": {
+    "2": 17,
+    "1": 12,
+    "3": 42
+   },
+   "Geometry: Trigonometry": {
+    "2": 19,
+    "1": 9,
+    "3": 26
+   },
+   "Modern Math: Set Theory": {
+    "2": 17,
+    "1": 11,
+    "3": 24
+   },
+   "Modern Math: Permutations & Combinations": {
+    "1": 13,
+    "2": 30,
+    "3": 89
+   },
+   "Modern Math: Statistics & Probability": {
+    "2": 35,
+    "1": 28,
+    "3": 94
+   },
+   "Higher Math: Matrices & Determinants \u2013 1": {
+    "1": 31,
+    "2": 9,
+    "3": 36
+   },
+   "Higher Math: Matrices & Determinants \u2013 2": {
+    "2": 50,
+    "3": 24
+   },
+   "Higher Math: Limits, Continuity, Differentiability": {
+    "1": 23,
+    "2": 31,
+    "3": 24
+   },
+   "Higher Math: Differentiation & Applications": {
+    "1": 8,
+    "2": 47,
+    "3": 39
+   },
+   "Higher Math: Indefinite Integration": {
+    "1": 9,
+    "2": 24,
+    "3": 210
+   },
+   "Higher Math: Definite Integration": {
+    "1": 10,
+    "2": 26,
+    "3": 38
+   },
+   "DI: Theory, Table Forms & Conversions": {
+    "1": 26,
+    "2": 72,
+    "3": 14
+   },
+   "DI: Bar, Line Graphs & Pie Charts": {
+    "1": 22,
+    "2": 128,
+    "3": 54
+   }
+  }
+ },
+ "LR": {
+  "total": 1820,
+  "tiers": {
+   "2": 949,
+   "1": 311,
+   "3": 560
+  },
+  "topics": {
+   "LR: Syllogisms": {
+    "2": 60,
+    "1": 60
+   },
+   "LR: Linear & Circular Seating": {
+    "2": 150,
+    "3": 70
+   },
+   "LR: Scheduling & Days": {
+    "2": 100,
+    "3": 70
+   },
+   "LR: Ranking & Ordering": {
+    "2": 100,
+    "3": 70
+   },
+   "LR: Blood Relations": {
+    "2": 76,
+    "1": 34
+   },
+   "LR: Direction Sense": {
+    "2": 40,
+    "1": 40,
+    "3": 70
+   },
+   "LR: Coding-Decoding": {
+    "1": 44,
+    "2": 66,
+    "3": 70
+   },
+   "LR: Number & Letter Series": {
+    "1": 63,
+    "2": 67,
+    "3": 140
+   },
+   "LR: Alphabet & Letter Patterns": {
+    "2": 75,
+    "1": 25
+   },
+   "LR: Number Operations": {
+    "2": 36,
+    "1": 34
+   },
+   "LR: Data Sufficiency": {
+    "2": 80,
+    "3": 70
+   },
+   "LR: Statement-Action & Cause": {
+    "2": 99,
+    "1": 11
+   }
+  }
+ },
+ "VARC": {
+  "total": 1252,
+  "tiers": {
+   "1": 563,
+   "2": 508,
+   "3": 181
+  },
+  "topics": {
+   "VARC: Vocabulary - Synonyms": {
+    "1": 80
+   },
+   "VARC: Vocabulary - Antonyms": {
+    "1": 78,
+    "3": 38
+   },
+   "VARC: Vocabulary - Words in Context": {
+    "2": 79,
+    "3": 49
+   },
+   "VARC: Vocabulary - Meanings & Definitions": {
+    "1": 112
+   },
+   "VARC: Idioms & Phrases": {
+    "1": 79,
+    "3": 5
+   },
+   "VARC: One-word Substitution": {
+    "1": 82
+   },
+   "VARC: Verbal Analogies": {
+    "1": 29
+   },
+   "VARC: Grammar - Subject-Verb Agreement": {
+    "1": 28,
+    "2": 25
+   },
+   "VARC: Grammar - Prepositions & Collocations": {
+    "1": 30
+   },
+   "VARC: Grammar - Tenses & Verb Forms": {
+    "2": 30
+   },
+   "VARC: Grammar - Articles, Pronouns & Determiners": {
+    "1": 25
+   },
+   "VARC: Grammar - Error Spotting": {
+    "2": 37
+   },
+   "VARC: Grammar - Commonly Confused Words": {
+    "1": 20
+   },
+   "VARC: Para Jumbles - Sentence Ordering": {
+    "2": 130,
+    "3": 29
+   },
+   "VARC: Para Jumbles - Odd Sentence & Opening/Closing": {
+    "2": 150
+   },
+   "VARC: Reading Comprehension": {
+    "2": 57,
+    "3": 50
+   },
+   "VARC: Grammar - Sentence Completion & Usage": {
+    "3": 10
+   }
+  }
+ }
+}

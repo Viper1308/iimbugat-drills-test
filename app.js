@@ -11,7 +11,7 @@ const DAY = 86400000;
 const COLORS = ['#1cb0f6', '#ff9600', '#58cc02', '#ce82ff', '#ff4b4b', '#ffc800'];
 
 // ---------- state ----------
-function fresh() { return { v: 1, xp: 0, streak: 0, best: 0, lastDay: null, goal: 100, sound: true, theme: 'auto', q: {}, days: {}, mocks: [], bm: [], topics: {} }; }
+function fresh() { return { v: 1, xp: 0, streak: 0, best: 0, lastDay: null, goal: 100, level: 'exam', sound: true, theme: 'auto', q: {}, days: {}, mocks: [], bm: [], topics: {} }; }
 function load() { try { return Object.assign(fresh(), JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { return fresh(); } }
 let S = load();
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { } }
@@ -19,11 +19,11 @@ const dayKey = (t = Date.now()) => { const d = new Date(t); return d.getFullYear
 const today = () => S.days[dayKey()] || { n: 0, c: 0, xp: 0, ms: 0 };
 
 // ---------- data ----------
-let DATA = {}, BY = {}, TOPICS = {}, TQ = {}, LESSONS = {};
+let DATA = {}, BY = {}, TOPICS = {}, TQ = {}, LESSONS = {}, NOTES = {};
 async function loadData() {
   const get = f => fetch('data/' + f).then(r => r.json());
-  const [a, b, c, p, l] = await Promise.all([get('QADI.json'), get('LR.json'), get('VARC.json'), get('PYQ_2025_verified.json'), get('lessons.json')]);
-  DATA = { QADI: a, LR: b, VARC: c, PYQ: p }; LESSONS = l;
+  const [a, b, c, p, l, n] = await Promise.all([get('QADI.json'), get('LR.json'), get('VARC.json'), get('PYQ_2025_verified.json'), get('lessons.json'), get('notes.json')]);
+  DATA = { QADI: a, LR: b, VARC: c, PYQ: p }; LESSONS = l; NOTES = n;
   for (const sec of SECS) {
     TOPICS[sec] = [];
     for (const q of DATA[sec]) { BY[q.id] = q; if (!TQ[q.topic]) { TQ[q.topic] = []; TOPICS[sec].push(q.topic); } TQ[q.topic].push(q); }
@@ -60,11 +60,20 @@ const liveStreak = () => (S.lastDay === dayKey() || S.lastDay === dayKey(Date.no
 const playerLevel = () => Math.floor(Math.sqrt(S.xp / 60)) + 1;
 function addXp(n) { const before = playerLevel(); S.xp += n; const d = S.days[dayKey()]; if (d) d.xp += n; if (playerLevel() > before) { toast(`⭐ Level ${playerLevel()}!`); confetti(); sfx('up'); } }
 
+// ---------- difficulty tiers ----------
+// tier 3 = exam-level (matches the 2025 paper / sample papers), 2 = standard drill, 1 = warm-up
+const LEVEL_NAMES = { exam: 'Exam level (recommended)', mixed: 'Exam + standard', all: 'Everything, incl. warm-ups' };
+function tierPool(list) {
+  const lv = S.level || 'exam'; if (lv === 'all') return list;
+  const at = t => list.filter(q => (q.tier || 2) === t);
+  if (lv === 'mixed') { const p = list.filter(q => (q.tier || 2) >= 2); return p.length ? p : list; }
+  const h = at(3); if (h.length) return h; const m = at(2); return m.length ? m : list;
+}
 // ---------- selection ----------
 const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[a[i], a[j]] = [a[j], a[i]]; } return a; };
 const pick = (a, n) => shuffle(a).slice(0, n);
 function dueIds(sec) { const now = Date.now(); return Object.entries(S.q).filter(([id, r]) => BY[id] && (!sec || BY[id].section === sec) && r.d <= now && (r.b < 5 || r.l === 0)).sort((a, b) => a[1].d - b[1].d).map(e => e[0]); }
-function unseenIn(topic) { return (TQ[topic] || []).filter(q => !S.q[q.id]); }
+function unseenIn(topic) { return tierPool((TQ[topic] || []).filter(q => !S.q[q.id])); }
 function buildFor(sec, n, avoid) {
   const out = []; const used = new Set(avoid);
   const dues = dueIds(sec).filter(id => !used.has(id)); for (const id of dues.slice(0, Math.ceil(n * .3))) { out.push(id); used.add(id); }
@@ -72,7 +81,7 @@ function buildFor(sec, n, avoid) {
   while (out.length < n && guard++ < n * 20) {
     const cand = topics.filter(t => unseenIn(t).some(q => !used.has(q.id)));
     if (!cand.length) break;
-    const w = cand.map(t => 5 - topicStat(t).lvl); const tot = w.reduce((a, b) => a + b, 0); let x = Math.random() * tot, t = cand[0];
+    const bestT = t => Math.max(...unseenIn(t).map(q => q.tier || 2)); const tw = { 3: 1, 2: .6, 1: .25 }; const w = cand.map(t => (5 - topicStat(t).lvl) * ((S.level || 'exam') === 'all' ? 1 : tw[bestT(t)])); const tot = w.reduce((a, b) => a + b, 0); let x = Math.random() * tot, t = cand[0];
     for (let i = 0; i < cand.length; i++) { x -= w[i]; if (x <= 0) { t = cand[i]; break; } }
     const lv = topicStat(t).lvl; const pool = unseenIn(t).filter(q => !used.has(q.id)); const ok = pool.filter(q => q.diff <= lv + 2);
     const q = pick(ok.length ? ok : pool, 1)[0]; out.push(q.id); used.add(q.id);
@@ -92,7 +101,7 @@ function buildTopicSet(topic, n = 10) {
   const lv = topicStat(topic).lvl; const all = TQ[topic]; const dues = dueIds().filter(id => BY[id].topic === topic).slice(0, 3);
   const un = unseenIn(topic).sort((a, b) => Math.abs(a.diff - (lv + 1.5)) - Math.abs(b.diff - (lv + 1.5)) + (Math.random() - .5)).map(q => q.id);
   let ids = [...dues]; for (const id of un) { if (ids.length >= n) break; if (!ids.includes(id)) ids.push(id); }
-  if (ids.length < n) for (const q of shuffle(all)) { if (ids.length >= n) break; if (!ids.includes(q.id)) ids.push(q.id); }
+  if (ids.length < n) for (const q of shuffle(tierPool(all).concat(all))) { if (ids.length >= n) break; if (!ids.includes(q.id)) ids.push(q.id); }
   return shuffle(ids);
 }
 
@@ -191,6 +200,12 @@ function viewTopic(t) {
   <div class="card"><div class="row"><div><b>${TQ[t].length}</b><div class="small">questions</div></div><div><b>${left}</b><div class="small">unseen</div></div><div><b>${st.n ? Math.round(st.acc * 100) + '%' : '–'}</b><div class="small">recent accuracy</div></div></div></div>
   <div class="foot"><div class="in row"><button class="btn" data-act="topic" data-t="${esc(t)}">Practise 10</button><button class="btn blue" data-act="topic20" data-t="${esc(t)}">Practise 25</button></div></div>`);
 }
+function explainHTML(q) {
+  const n = NOTES[q.topic + '||' + q.sub]; const L = LESSONS[q.topic];
+  return `<div class="sol"><b>Solution</b><br>${esc(q.solution)}</div>` +
+    (n ? `<div class="ex"><div class="ex-h">🧭 Method</div><p>${esc(n.m)}</p><div class="ex-h warn">⚠️ Watch out</div><p>${esc(n.w)}</p></div>` : '') +
+    (L && q.section !== 'PYQ' && TQ[q.topic] ? `<button class="link" data-lesson="${esc(q.topic)}">📘 Review the lesson: ${esc(shortName(q.topic))}</button>` : '');
+}
 // ----- practice session -----
 function startSession(ids, kind, title) { if (!ids.length) return toast('Nothing to practise yet'); SES = { ids, i: 0, kind, title, combo: 0, best: 0, xp: 0, ok: 0, n: 0, sel: null, checked: false, hint: 0, hinted: false, t0: Date.now(), wrong: [] }; location.hash = '#/play'; renderQ(); }
 function renderQ() {
@@ -206,6 +221,13 @@ function renderQ() {
   <div class="foot" id="foot"><div class="in"><button class="btn" id="check" disabled>Check</button></div></div>`);
   SES.sel = null; SES.checked = false; SES.hint = 0; SES.hinted = false; SES.q0 = Date.now();
 }
+function lessonSheet(t) {
+  const L = LESSONS[t]; if (!L) return; document.querySelector('.sheet')?.remove();
+  const el = document.createElement('div'); el.className = 'sheet';
+  el.innerHTML = `<div class="sheet-in"><button class="back" data-close>✕</button><h2>${esc(shortName(t))}</h2><p class="small">${esc(L.blurb)}</p>${L.cards.map(c => `<div class="lcard"><h4>${esc(c.h)}</h4><p>${esc(c.t)}</p></div>`).join('')}</div>`;
+  el.addEventListener('click', e => { if (e.target === el || e.target.closest('[data-close]')) el.remove(); });
+  document.body.appendChild(el);
+}
 function pickOpt(i) { if (!SES || SES.checked) return; SES.sel = i; document.querySelectorAll('.opt').forEach((b, j) => b.classList.toggle('sel', j === i)); const c = $('#check'); if (c) { c.disabled = false; } }
 function checkAns() {
   if (!SES || SES.checked || SES.sel == null) return; SES.checked = true; const q = BY[SES.ids[SES.i]]; const ok = SES.sel === q.answer; const ms = Date.now() - SES.q0;
@@ -217,7 +239,7 @@ function checkAns() {
   if (ok && SES.combo >= 3) { const c = document.createElement('div'); c.className = 'combo'; c.textContent = `🔥 ${SES.combo} in a row`; document.body.appendChild(c); setTimeout(() => c.remove(), 1200); }
   const last = SES.i + 1 >= SES.ids.length; const cp = (SES.i + 1) % 10 === 0 && !last;
   const f = $('#foot'); f.className = 'foot ' + (ok ? 'ok' : 'bad');
-  f.innerHTML = `<div class="in"><div class="fb ${ok ? 'ok' : 'bad'}"><b>${ok ? ['Correct!', 'Nice!', 'Spot on!', 'Brilliant!'][Math.floor(Math.random() * 4)] : 'Not quite'}</b>${gain ? `<span>+${gain} XP</span>` : ''}</div><div class="sol">${esc(q.solution)}</div>${cp ? `<div class="small" style="margin:6px 0">✅ ${SES.i + 1} done — ${SES.ok}/${SES.n} right</div>` : ''}<button class="btn ${ok ? '' : 'red'}" data-act="next" style="margin-top:10px">${last ? 'Finish' : 'Continue'}</button></div>`;
+  f.innerHTML = `<div class="in"><div class="fb ${ok ? 'ok' : 'bad'}"><b>${ok ? ['Correct!', 'Nice!', 'Spot on!', 'Brilliant!'][Math.floor(Math.random() * 4)] : 'Not quite'}</b>${gain ? `<span>+${gain} XP</span>` : ''}</div>${explainHTML(q)}${cp ? `<div class="small" style="margin:6px 0">✅ ${SES.i + 1} done — ${SES.ok}/${SES.n} right</div>` : ''}<button class="btn ${ok ? '' : 'red'}" data-act="next" style="margin-top:10px">${last ? 'Finish' : 'Continue'}</button></div>`;
 }
 function nextQ() { if (!SES) return; SES.i++; renderQ(); }
 function showHint() { if (!SES || SES.checked) return; const q = BY[SES.ids[SES.i]]; const hs = q.hints && q.hints.length ? q.hints : ['Re-read the question and eliminate options that cannot be right.']; if (SES.hint >= hs.length) return toast('No more hints'); $('#hints').insertAdjacentHTML('beforeend', `<div class="hint">💡 ${esc(hs[SES.hint])}</div>`); SES.hint++; SES.hinted = true; }
@@ -234,7 +256,7 @@ function viewReview() { const ids = reviewIds(); setView(`${topBar('#/')}<h2 sty
 function buildMock(secs) {
   const sections = []; for (const s of secs) { const sh = MOCK_SHAPE[s]; const topics = TOPICS[s]; const used = new Set(); const ids = [];
     const unseen = DATA[s].filter(q => !S.q[q.id]); const poolBase = unseen.length >= sh.n * 2 ? unseen : DATA[s];
-    const byT = {}; poolBase.forEach(q => (byT[q.topic] = byT[q.topic] || []).push(q.id));
+    const tm = {}; poolBase.forEach(q => (tm[q.topic] = tm[q.topic] || []).push(q)); const byT = {}; for (const t in tm) byT[t] = tierPool(tm[t]).map(q => q.id);
     const tl = shuffle(Object.keys(byT)); let i = 0; while (ids.length < sh.n && i < 500) { const t = tl[i++ % tl.length]; const id = pick(byT[t].filter(x => !used.has(x)), 1)[0]; if (id) { used.add(id); ids.push(id); } }
     sections.push({ sec: s, ids: shuffle(ids), mins: sh.mins * (ids.length / sh.n) }); }
   return sections;
@@ -273,7 +295,7 @@ function finishExam() {
 }
 function viewExamReview() {
   const ex = window._exam; if (!ex) return viewHome(); const items = ex.sections.flatMap(s => s.ids);
-  setView(`${topBar('#/')}<h2 style="margin:16px 0">Answer review</h2>${items.map((id, i) => { const q = BY[id], a = ex.ans[id]; const st = a == null ? 'Skipped' : a === q.answer ? 'Correct' : 'Wrong'; return `<div class="card">${stimHTML(q.stim)}<div class="small">${i + 1} · ${esc(shortName(q.topic))} · <b style="color:${st === 'Correct' ? 'var(--green-d)' : st === 'Wrong' ? 'var(--red)' : 'var(--muted)'}">${st}</b></div><div class="stem" style="font-size:16px">${esc(q.stem)}</div>${q.options.map((o, j) => `<div class="opt ${j === q.answer ? 'ok' : j === a ? 'bad' : ''}" style="margin:6px 0"><span class="k">${j + 1}</span><span>${esc(o)}</span></div>`).join('')}<div class="sol small">${esc(q.solution)}</div></div>`; }).join('')}`);
+  setView(`${topBar('#/')}<h2 style="margin:16px 0">Answer review</h2>${items.map((id, i) => { const q = BY[id], a = ex.ans[id]; const st = a == null ? 'Skipped' : a === q.answer ? 'Correct' : 'Wrong'; return `<div class="card">${stimHTML(q.stim)}<div class="small">${i + 1} · ${esc(shortName(q.topic))} · <b style="color:${st === 'Correct' ? 'var(--green-d)' : st === 'Wrong' ? 'var(--red)' : 'var(--muted)'}">${st}</b></div><div class="stem" style="font-size:16px">${esc(q.stem)}</div>${q.options.map((o, j) => `<div class="opt ${j === q.answer ? 'ok' : j === a ? 'bad' : ''}" style="margin:6px 0"><span class="k">${j + 1}</span><span>${esc(o)}</span></div>`).join('')}<div class="small">${explainHTML(q)}</div></div>`; }).join('')}`);
 }
 // ----- stats / settings -----
 function viewStats() {
@@ -298,16 +320,19 @@ function download(name, text) { const a = document.createElement('a'); a.href = 
 function viewSettings() {
   setView(`${topBar('#/')}<h2 style="margin:18px 0 8px">Settings</h2>
   <div class="card"><label class="sw">Daily goal<select id="goal">${[50, 100, 150, 200].map(g => `<option ${S.goal === g ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
+  <label class="sw">Question level<select id="lvl">${Object.entries(LEVEL_NAMES).map(([k, v]) => `<option value="${k}" ${(S.level || 'exam') === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+  <p class="small" style="margin:0 0 8px">Exam level uses multi-step questions modelled on the 2025 paper and the sample papers. Where a topic has none left, easier questions fill in.</p>
   <label class="sw">Sound<input type="checkbox" id="snd" ${S.sound ? 'checked' : ''}></label>
   <label class="sw">Theme<select id="theme">${['auto', 'light', 'dark'].map(g => `<option ${S.theme === g ? 'selected' : ''}>${g}</option>`).join('')}</select></label></div>
   <div class="card"><h3>Your data</h3><p class="small">Progress is stored on this device only.</p><div class="row"><button class="btn ghost" data-act="backup">Back up</button><button class="btn ghost" data-act="restore">Restore</button></div><div style="height:10px"></div><button class="btn blue" data-act="asap">Export for ASAP</button><div style="height:10px"></div><button class="btn red" data-act="reset">Reset all progress</button></div>
-  <p class="small" style="text-align:center">Questions: ${DATA.QADI.length} QADI · ${DATA.LR.length} LR · ${DATA.VARC.length} Verbal · ${DATA.PYQ.length} official</p>`);
+  <p class="small" style="text-align:center">Questions: ${DATA.QADI.length} QADI · ${DATA.LR.length} LR · ${DATA.VARC.length} Verbal · ${DATA.PYQ.length} official · ${['QADI','LR','VARC'].reduce((a, k) => a + DATA[k].filter(q => q.tier === 3).length, 0)} at exam level</p>`);
 }
 function applyTheme() { const t = S.theme; if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t); }
 
 // ---------- events ----------
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-go],[data-act],[data-topic],[data-sec],[data-opt],[data-xopt],[data-xq],[data-xa]'); if (!t) return; const d = t.dataset;
+  const t = e.target.closest('[data-lesson],[data-go],[data-act],[data-topic],[data-sec],[data-opt],[data-xopt],[data-xq],[data-xa]'); if (!t) return; const d = t.dataset;
+  if (d.lesson) return lessonSheet(d.lesson);
   if (d.go) { if (d.go === '#/' ) { SES = null; EX && 0; } location.hash = d.go; return route(); }
   if (d.sec) { homeSec = d.sec; return viewHome(); }
   if (d.topic) { location.hash = '#/topic/' + encodeURIComponent(d.topic); return route(); }
@@ -339,7 +364,7 @@ document.addEventListener('click', e => {
     case 'reset': if (confirm('Erase all progress on this device?')) { S = fresh(); save(); toast('Reset'); viewSettings(); } return;
   }
 });
-document.addEventListener('change', e => { const t = e.target; if (t.id === 'goal') { S.goal = +t.value; save(); } if (t.id === 'snd') { S.sound = t.checked; save(); } if (t.id === 'theme') { S.theme = t.value; save(); applyTheme(); } });
+document.addEventListener('change', e => { const t = e.target; if (t.id === 'goal') { S.goal = +t.value; save(); } if (t.id === 'lvl') { S.level = t.value; save(); toast('Level updated'); } if (t.id === 'snd') { S.sound = t.checked; save(); } if (t.id === 'theme') { S.theme = t.value; save(); applyTheme(); } });
 document.addEventListener('keydown', e => {
   if (!SES || location.hash !== '#/play') return; if (['1', '2', '3', '4'].includes(e.key)) pickOpt(+e.key - 1);
   if (e.key === 'Enter') { if (SES.checked) nextQ(); else checkAns(); }

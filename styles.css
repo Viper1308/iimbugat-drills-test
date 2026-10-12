@@ -105,3 +105,16 @@ select,input[type=text]{font:inherit;padding:8px 10px;border-radius:10px;border:
 /* larger chart text on phones */
 .stim svg text{font-size:16px;fill:var(--ink)}
 .stim svg text[font-size="10"]{font-size:14px}
+
+.lcard p{white-space:pre-line;line-height:1.55}
+.ex{background:var(--soft);border-radius:14px;padding:10px 14px;margin:10px 0;text-align:left;color:var(--ink)}
+.ex p{margin:2px 0 8px;line-height:1.5;font-size:14.5px}
+.ex-h{font-weight:800;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--blue-d)}
+.ex-h.warn{color:var(--orange-d)}
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:flex;align-items:flex-end;justify-content:center}
+.sheet-in{background:var(--bg);width:100%;max-width:640px;max-height:88vh;overflow:auto;border-radius:22px 22px 0 0;padding:16px 16px 28px}
+.foot.ok .ex,.foot.bad .ex{background:rgba(255,255,255,.65)}
+.foot .in{max-height:62vh;overflow:auto}
+/* long reading passages: show in full, the page scrolls */
+.stim:has(.passage){max-height:none;overflow:visible}
+.passage{font-weight:500;font-size:15.5px;line-height:1.6}
