@@ -11,7 +11,7 @@ const DAY = 86400000;
 const COLORS = ['#1cb0f6', '#ff9600', '#58cc02', '#ce82ff', '#ff4b4b', '#ffc800'];
 
 // ---------- state ----------
-function fresh() { return { v: 1, xp: 0, streak: 0, best: 0, lastDay: null, goal: 100, level: 'exam', sound: true, theme: 'auto', q: {}, days: {}, mocks: [], bm: [], topics: {} }; }
+function fresh() { return { v: 1, xp: 0, streak: 0, best: 0, lastDay: null, goal: 100, level: 'exam', sound: true, theme: 'auto', q: {}, days: {}, mocks: [], bm: [], topics: {}, read: {} }; }
 function load() { try { return Object.assign(fresh(), JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { return fresh(); } }
 let S = load();
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch { } }
@@ -19,24 +19,25 @@ const dayKey = (t = Date.now()) => { const d = new Date(t); return d.getFullYear
 const today = () => S.days[dayKey()] || { n: 0, c: 0, xp: 0, ms: 0 };
 
 // ---------- data ----------
-let DATA = {}, BY = {}, TOPICS = {}, TQ = {}, LESSONS = {}, NOTES = {};
+let DATA = {}, BY = {}, TOPICS = {}, TQ = {}, LESSONS = {}, NOTES = {}, CON = {}, CONS = [];
 async function loadData() {
   const get = f => fetch('data/' + f).then(r => r.json());
-  const [a, b, c, p, l, n] = await Promise.all([get('QADI.json'), get('LR.json'), get('VARC.json'), get('PYQ_2025_verified.json'), get('lessons.json'), get('notes.json')]);
-  DATA = { QADI: a, LR: b, VARC: c, PYQ: p }; LESSONS = l; NOTES = n;
+  const [a, b, c, p, l, n, cc] = await Promise.all([get('QADI.json'), get('LR.json'), get('VARC.json'), get('PYQ_2025_verified.json'), get('lessons.json'), get('notes.json'), get('concepts.json')]);
+  DATA = { QADI: a, LR: b, VARC: c, PYQ: p }; LESSONS = l; NOTES = n; CONS = cc; for (const x of cc) CON[x.id] = x;
   for (const sec of SECS) {
     TOPICS[sec] = [];
-    for (const q of DATA[sec]) { BY[q.id] = q; if (!TQ[q.topic]) { TQ[q.topic] = []; TOPICS[sec].push(q.topic); } TQ[q.topic].push(q); }
+    for (const q of DATA[sec]) { BY[q.id] = q; const k = q.concept || q.topic; (TQ[k] = TQ[k] || []).push(q); }
+    TOPICS[sec] = CONS.filter(x => x.section === sec && TQ[x.id]).map(x => x.id);
   }
   for (const q of DATA.PYQ) BY[q.id] = q;
 }
-const shortName = t => t.replace(/^(LR|VARC): /, '').replace(' - ', ' – ');
+const shortName = t => CON[t] ? CON[t].title : t.replace(/^(LR|VARC): /, '').replace(' - ', ' – ');
 const ICONS = [[/Percent/, '％'], [/Interest/, '💰'], [/Ratio/, '⚖️'], [/Average/, '📊'], [/Mixture/, '🧪'], [/Speed/, '🚆'], [/Work/, '🛠️'], [/LCM/, '🔢'], [/Cyclic/, '🔁'],
 [/Linear & Quad/, 'x²'], [/Sequences/, '∑'], [/Coordinate/, '📐'], [/Sets/, '⭕'], [/Functions/, 'ƒ'], [/Modulus/, '|x|'], [/Triangles/, '△'], [/Circles/, '◯'], [/Trigon/, '📏'],
 [/Set Theory/, '🔵'], [/Permut/, '🎲'], [/Statistics/, '📈'], [/DI: Theory/, '🧾'], [/DI: Bar/, '📊'], [/Matrices.*1/, '▦'], [/Matrices.*2/, '▩'], [/Limits/, '∞'], [/Differ/, 'dy'], [/Indefinite/, '∫'], [/Definite/, '∫ᵇ'],
 [/Syllog/, '🧩'], [/Seating/, '🪑'], [/Schedul/, '📅'], [/Rank/, '🏅'], [/Blood/, '👪'], [/Direction/, '🧭'], [/Coding/, '🔐'], [/Series/, '🔢'], [/Alphabet/, '🔤'], [/Operations/, '➕'], [/Sufficiency/, '❓'], [/Statement/, '💬'],
 [/Synonym/, '≈'], [/Antonym/, '≠'], [/Context/, '📝'], [/Meanings/, '📖'], [/Idiom/, '🗣️'], [/One-word/, '1️⃣'], [/Analog/, '🔗'], [/Agreement/, '✅'], [/Preposition/, '📍'], [/Tense/, '⏳'], [/Article/, '🅰️'], [/Error/, '🔍'], [/Confused/, '🤔'], [/Ordering/, '🔀'], [/Odd/, '🚫'], [/Comprehension/, '📚']];
-const iconFor = t => (ICONS.find(([r]) => r.test(t)) || [0, '⭐'])[1];
+const iconFor = t => CON[t] ? CON[t].icon : (ICONS.find(([r]) => r.test(t)) || [0, '⭐'])[1];
 
 // ---------- mastery ----------
 function topicStat(t) { const s = S.topics[t]; if (!s) return { n: 0, acc: 0, lvl: 0, c: 0 }; const rec = s.recent || []; const acc = rec.length ? rec.reduce((a, b) => a + b, 0) / rec.length : 0; let lvl = 1; if (s.n >= 60 && rec.length >= 30 && acc >= .85) lvl = 4; else if (s.n >= 40 && acc >= .75) lvl = 3; else if (s.n >= 20 && acc >= .6) lvl = 2; return { n: s.n, acc, lvl, c: s.c }; }
@@ -47,7 +48,7 @@ function recordAnswer(q, ok, ms, hinted) {
   r.b = ok ? Math.min(5, (r.b || 0) + (hinted ? 0 : 1)) : 1;
   r.d = now + [0, 0, DAY, 3 * DAY, 7 * DAY, 21 * DAY][r.b];
   S.q[q.id] = r;
-  const t = S.topics[q.topic] || { n: 0, c: 0, recent: [] }; t.n++; if (ok) t.c++; t.recent.push(ok ? 1 : 0); if (t.recent.length > 30) t.recent.shift(); S.topics[q.topic] = t;
+  const tk = q.concept || q.topic; const t = S.topics[tk] || { n: 0, c: 0, recent: [] }; t.n++; if (ok) t.c++; t.recent.push(ok ? 1 : 0); if (t.recent.length > 30) t.recent.shift(); S.topics[tk] = t;
   const d = S.days[k] || { n: 0, c: 0, xp: 0, ms: 0 }; d.n++; if (ok) d.c++; d.ms += ms; S.days[k] = d;
   if (d.n === 10) bumpStreak();
 }
@@ -98,7 +99,7 @@ function buildDaily(n) {
   return out;
 }
 function buildTopicSet(topic, n = 10) {
-  const lv = topicStat(topic).lvl; const all = TQ[topic]; const dues = dueIds().filter(id => BY[id].topic === topic).slice(0, 3);
+  const lv = topicStat(topic).lvl; const all = TQ[topic]; const dues = dueIds().filter(id => (BY[id].concept || BY[id].topic) === topic).slice(0, 3);
   const un = unseenIn(topic).sort((a, b) => Math.abs(a.diff - (lv + 1.5)) - Math.abs(b.diff - (lv + 1.5)) + (Math.random() - .5)).map(q => q.id);
   let ids = [...dues]; for (const id of un) { if (ids.length >= n) break; if (!ids.includes(id)) ids.push(id); }
   if (ids.length < n) for (const q of shuffle(tierPool(all).concat(all))) { if (ids.length >= n) break; if (!ids.includes(q.id)) ids.push(q.id); }
@@ -175,14 +176,18 @@ function stimHTML(st) {
 
 // ---------- views ----------
 const app = $('#app'); let SES = null, EX = null, timerH = null;
-function setView(html) { clearInterval(timerH); app.innerHTML = html; window.scrollTo(0, 0); }
-function topBar(back) { const d = today(); const p = Math.min(100, Math.round(d.n / S.goal * 100)); return `<div class="top">${back ? `<button class="back" data-go="${back}">✕</button>` : ''}<div class="grow"><b style="font-size:18px">UGAT Drills</b></div><span class="chip fire">🔥 ${liveStreak()}</span><span class="chip xp">⚡ ${S.xp}</span><div class="ring" style="--p:${p}" title="Daily goal"><span>${d.n}</span></div></div>`; }
+function setView(html) {
+  clearInterval(timerH); app.innerHTML = `<div class="scroller">${html}</div>`;
+  const f = app.querySelector('.scroller > .foot'); if (f) app.appendChild(f);
+}
+function topBar(back) { const d = today(); const p = Math.min(100, Math.round(d.n / S.goal * 100)); return `<div class="top">${back ? `<button class="back" data-go="${back}">✕</button>` : ''}<div class="grow"><b style="font-size:18px">Drills</b></div><span class="chip fire">🔥 ${liveStreak()}</span><span class="chip xp">⚡ ${S.xp}</span><div class="ring" style="--p:${p}" title="Daily goal"><span>${d.n}</span></div></div>`; }
 let homeSec = 'QADI';
 function lvlBadge(l) { return `<span class="lvl l${l}">${LEVELS[l]}</span>`; }
 function crowns(l) { return `<div class="crowns">${[1, 2, 3, 4].map(i => `<i class="${l >= i ? 'on' : ''}"></i>`).join('')}</div>`; }
 function viewHome() {
   const d = today(); const left = Math.max(0, S.goal - d.n); const dues = dueIds().length;
-  const nodes = (homeSec === 'PYQ') ? '' : TOPICS[homeSec].map(t => { const st = topicStat(t); const tot = TQ[t].length; const seen = TQ[t].filter(q => S.q[q.id]).length; return `<button class="node ${st.lvl >= 4 ? 'done' : st.lvl === 0 ? 'start' : ''}" data-topic="${esc(t)}"><div class="ico">${iconFor(t)}</div><div class="meta"><div class="name">${esc(shortName(t))}</div><div class="sub">${seen}/${tot} seen${st.n ? ` · ${Math.round(st.acc * 100)}% recent` : ''}</div>${crowns(st.lvl)}</div>${lvlBadge(st.lvl)}</button>`; }).join('');
+  const node = t => { const st = topicStat(t); const tot = TQ[t].length; const seen = TQ[t].filter(q => S.q[q.id]).length; return `<button class="node ${st.lvl >= 4 ? 'done' : st.lvl === 0 ? 'start' : ''}" data-topic="${esc(t)}"><div class="ico">${iconFor(t)}</div><div class="meta"><div class="name">${esc(shortName(t))}</div><div class="sub">${seen}/${tot} seen${st.n ? ` · ${Math.round(st.acc * 100)}% recent` : ''}</div>${crowns(st.lvl)}</div>${lvlBadge(st.lvl)}</button>`; };
+  let nodes = ''; if (homeSec !== 'PYQ') { let g = null; for (const t of TOPICS[homeSec]) { if (CON[t].group !== g) { g = CON[t].group; nodes += `<div class="section-title grp">${esc(g)}</div>`; } nodes += node(t); } }
   const pyq = DATA.PYQ.filter(q => !q.needs_image);
   setView(`${topBar()}
   <div class="hero"><h2>${left ? `${left} more to hit today's goal` : 'Daily goal complete! 🎉'}</h2><p>${dues ? `${dues} questions due for review · ` : ''}Mixed practice weighted like the real test (30/20/20 points).</p><button class="btn white" data-act="daily">${left ? `Start daily ${left > 100 ? 100 : left}` : 'Keep going — 50 more'}</button></div>
@@ -193,18 +198,18 @@ function viewHome() {
 }
 function reviewIds() { const wrong = Object.entries(S.q).filter(([id, r]) => BY[id] && r.l === 0).map(e => e[0]); return [...new Set([...wrong, ...S.bm.filter(id => BY[id])])]; }
 function viewTopic(t) {
-  const L = LESSONS[t]; const st = topicStat(t); const left = TQ[t].filter(q => !S.q[q.id]).length;
+  const c = CON[t]; if (!c || !TQ[t]) return viewHome(); const st = topicStat(t); const left = TQ[t].filter(q => !S.q[q.id]).length;
   setView(`${topBar('#/')}
-  <div style="padding:18px 0 4px"><div class="small">${esc(TQ[t][0].section)} · ${lvlBadge(st.lvl)}</div><h1 style="font-size:26px;margin-top:4px">${iconFor(t)} ${esc(shortName(t))}</h1><p class="small">${L ? esc(L.blurb) : ''}</p></div>
-  <div class="section-title">Learn first</div><div class="cards-lesson">${(L ? L.cards : []).map(c => `<div class="lcard"><h4>${esc(c.h)}</h4><p>${esc(c.t)}</p></div>`).join('')}</div>
+  <div style="padding:18px 0 4px"><div class="small">${esc(c.section)} · ${esc(c.group)} · ${lvlBadge(st.lvl)}</div><h1 style="font-size:26px;margin-top:4px">${c.icon} ${esc(c.title)}</h1><p class="small">Drills on this concept only. Stuck? The lesson is one swipe away.</p></div>
+  <button class="btn ghost" data-learn="${esc(t)}" style="margin:10px 0">📘 Read the lesson</button>
   <div class="card"><div class="row"><div><b>${TQ[t].length}</b><div class="small">questions</div></div><div><b>${left}</b><div class="small">unseen</div></div><div><b>${st.n ? Math.round(st.acc * 100) + '%' : '–'}</b><div class="small">recent accuracy</div></div></div></div>
   <div class="foot"><div class="in row"><button class="btn" data-act="topic" data-t="${esc(t)}">Practise 10</button><button class="btn blue" data-act="topic20" data-t="${esc(t)}">Practise 25</button></div></div>`);
 }
 function explainHTML(q) {
-  const n = NOTES[q.topic + '||' + q.sub]; const L = LESSONS[q.topic];
+  const n = NOTES[q.topic + '||' + q.sub];
   return `<div class="sol"><b>Solution</b><br>${esc(q.solution)}</div>` +
     (n ? `<div class="ex"><div class="ex-h">🧭 Method</div><p>${esc(n.m)}</p><div class="ex-h warn">⚠️ Watch out</div><p>${esc(n.w)}</p></div>` : '') +
-    (L && q.section !== 'PYQ' && TQ[q.topic] ? `<button class="link" data-lesson="${esc(q.topic)}">📘 Review the lesson: ${esc(shortName(q.topic))}</button>` : '');
+    (CON[q.concept] ? `<button class="link" data-lesson="${esc(q.concept)}">📘 Review the lesson: ${esc(shortName(q.concept))}</button>` : '');
 }
 // ----- practice session -----
 function startSession(ids, kind, title) { if (!ids.length) return toast('Nothing to practise yet'); SES = { ids, i: 0, kind, title, combo: 0, best: 0, xp: 0, ok: 0, n: 0, sel: null, checked: false, hint: 0, hinted: false, t0: Date.now(), wrong: [] }; location.hash = '#/play'; renderQ(); }
@@ -214,7 +219,7 @@ function renderQ() {
   const q = BY[SES.ids[SES.i]]; const pct = Math.round(SES.i / SES.ids.length * 100);
   const bm = S.bm.includes(q.id);
   setView(`<div class="top"><button class="back" data-act="quit">✕</button><div class="progress"><div style="width:${pct}%"></div></div><span class="chip fire">🔥 ${SES.combo}</span></div>
-  <div class="qwrap"><div class="small">${esc(shortName(q.topic))} · ${SES.i + 1}/${SES.ids.length} <button class="link" data-act="bm" style="float:right">${bm ? '★ Saved' : '☆ Save'}</button></div>
+  <div class="qwrap"><div class="small">${esc(shortName(q.concept || q.topic))} · ${SES.i + 1}/${SES.ids.length} <button class="link" data-act="bm" style="float:right">${bm ? '★ Saved' : '☆ Save'}</button></div>
   ${stimHTML(q.stim)}<div class="stem">${esc(q.stem)}</div>
   <div id="opts">${q.options.map((o, i) => `<button class="opt" data-opt="${i}"><span class="k">${i + 1}</span><span>${esc(o)}</span></button>`).join('')}</div>
   <div id="hints"></div><button class="link" data-act="hint">💡 Hint</button></div>
@@ -222,9 +227,9 @@ function renderQ() {
   SES.sel = null; SES.checked = false; SES.hint = 0; SES.hinted = false; SES.q0 = Date.now();
 }
 function lessonSheet(t) {
-  const L = LESSONS[t]; if (!L) return; document.querySelector('.sheet')?.remove();
+  const c = CON[t]; if (!c) return; document.querySelector('.sheet')?.remove();
   const el = document.createElement('div'); el.className = 'sheet';
-  el.innerHTML = `<div class="sheet-in"><button class="back" data-close>✕</button><h2>${esc(shortName(t))}</h2><p class="small">${esc(L.blurb)}</p>${L.cards.map(c => `<div class="lcard"><h4>${esc(c.h)}</h4><p>${esc(c.t)}</p></div>`).join('')}</div>`;
+  el.innerHTML = `<div class="sheet-in"><button class="back" data-close>✕</button>${conceptHTML(c, true)}</div>`;
   el.addEventListener('click', e => { if (e.target === el || e.target.closest('[data-close]')) el.remove(); });
   document.body.appendChild(el);
 }
@@ -251,7 +256,7 @@ function finishSession() {
   const w = s.wrong; SES = null; EX = null; window._retry = w;
 }
 // ----- review -----
-function viewReview() { const ids = reviewIds(); setView(`${topBar('#/')}<h2 style="margin:18px 0 6px">Review</h2><p class="small">Questions you missed last time, plus the ones you saved.</p>${ids.length ? `<button class="btn" data-act="reviewgo">Practise ${Math.min(ids.length, 20)}</button><div class="list card">${ids.slice(0, 40).map(id => `<div class="it"><span>${esc(shortName(BY[id].topic))}</span><span class="small">${S.bm.includes(id) ? '★' : '✗'}</span></div>`).join('')}</div>` : '<div class="card">Nothing to review — nice.</div>'}`); }
+function viewReview() { const ids = reviewIds(); setView(`${topBar('#/')}<h2 style="margin:18px 0 6px">Review</h2><p class="small">Questions you missed last time, plus the ones you saved.</p>${ids.length ? `<button class="btn" data-act="reviewgo">Practise ${Math.min(ids.length, 20)}</button><div class="list card">${ids.slice(0, 40).map(id => `<div class="it"><span>${esc(shortName(BY[id].concept || BY[id].topic))}</span><span class="small">${S.bm.includes(id) ? '★' : '✗'}</span></div>`).join('')}</div>` : '<div class="card">Nothing to review — nice.</div>'}`); }
 // ----- mock test -----
 function buildMock(secs) {
   const sections = []; for (const s of secs) { const sh = MOCK_SHAPE[s]; const topics = TOPICS[s]; const used = new Set(); const ids = [];
@@ -302,7 +307,7 @@ function viewStats() {
   const days = []; for (let i = 13; i >= 0; i--) days.push(S.days[dayKey(Date.now() - i * DAY)] || { n: 0 });
   const tot = Object.values(S.days).reduce((a, d) => ({ n: a.n + d.n, c: a.c + d.c, ms: a.ms + (d.ms || 0) }), { n: 0, c: 0, ms: 0 });
   const secRows = SECS.map(s => { let n = 0, c = 0; TOPICS[s].forEach(t => { const x = S.topics[t]; if (x) { n += x.n; c += x.c; } }); const seen = DATA[s].filter(q => S.q[q.id]).length; return `<div style="margin:10px 0"><b>${s}</b> <span class="small">${seen}/${DATA[s].length} seen · ${n ? Math.round(c / n * 100) : 0}% accuracy</span><div class="bar"><div style="width:${seen / DATA[s].length * 100}%"></div></div></div>`; }).join('');
-  const weak = Object.keys(TQ).map(t => ({ t, s: topicStat(t) })).filter(x => x.s.n >= 8).sort((a, b) => a.s.acc - b.s.acc).slice(0, 6);
+  const weak = Object.keys(TQ).filter(t => CON[t]).map(t => ({ t, s: topicStat(t) })).filter(x => x.s.n >= 8).sort((a, b) => a.s.acc - b.s.acc).slice(0, 6);
   setView(`${topBar('#/')}<h2 style="margin:18px 0 8px">Your progress</h2>
   <div class="stats3"><div class="stat"><b>${tot.n}</b><span>Answered</span></div><div class="stat"><b>${tot.n ? Math.round(tot.c / tot.n * 100) : 0}%</b><span>Accuracy</span></div><div class="stat"><b>${tot.n ? Math.round(tot.ms / tot.n / 1000) : 0}s</b><span>Avg time</span></div></div>
   <div class="stats3"><div class="stat"><b>🔥 ${liveStreak()}</b><span>Streak</span></div><div class="stat"><b>${S.best}</b><span>Best streak</span></div><div class="stat"><b>Lv ${playerLevel()}</b><span>${S.xp} XP</span></div></div>
@@ -313,7 +318,7 @@ function viewStats() {
 }
 function exportASAP() {
   const out = { app: 'ugat-drills', version: 1, exported: new Date().toISOString(), streak: liveStreak(), dailyGoal: S.goal, today: today(), due: dueIds().length,
-    topics: Object.keys(TQ).map(t => { const st = topicStat(t); return { id: t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''), name: t, section: TQ[t][0].section, level: st.lvl, levelName: LEVELS[st.lvl], answered: st.n, recentAccuracy: +st.acc.toFixed(2) }; }), mocks: S.mocks };
+    topics: Object.keys(TQ).map(t => { const st = topicStat(t); return { id: t, name: shortName(t), section: TQ[t][0].section, level: st.lvl, levelName: LEVELS[st.lvl], answered: st.n, recentAccuracy: +st.acc.toFixed(2) }; }), mocks: S.mocks };
   download('ugat-asap-export.json', JSON.stringify(out, null, 2));
 }
 function download(name, text) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
@@ -328,6 +333,79 @@ function viewSettings() {
   <p class="small" style="text-align:center">Questions: ${DATA.QADI.length} QADI · ${DATA.LR.length} LR · ${DATA.VARC.length} Verbal · ${DATA.PYQ.length} official · ${['QADI','LR','VARC'].reduce((a, k) => a + DATA[k].filter(q => q.tier === 3).length, 0)} at exam level</p>`);
 }
 function applyTheme() { const t = S.theme; if (t === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', t); }
+
+// ---------- learn pane ----------
+let LV = { id: null, sec: 'QADI', q: '' };
+const learnEl = $('#learn'), pager = $('#pager'), seg = $('#seg');
+const isWide = () => matchMedia('(min-width:900px)').matches;
+function goPane(n) { if (isWide()) return; pager.scrollTo({ left: n * pager.clientWidth, behavior: 'smooth' }); }
+const para = p => esc(p).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+function conceptHTML(c, sheet) {
+  const st = topicStat(c.id); const nq = (TQ[c.id] || []).length;
+  const part = (k, h, body) => body ? `<section class="lsec" data-k="${k}"><h3>${h}</h3>${body}</section>` : '';
+  const explain = (c.explain || []).map(p => p.startsWith('## ') ? `<h4 class="sub">${para(p.slice(3))}</h4>` : `<p>${para(p)}</p>`).join('');
+  const formulae = (c.formulae || []).length ? `<div class="fgrid">${c.formulae.map(f => `<div class="fm"><div class="fn">${esc(f[0])}</div><div class="fx">${esc(f[1])}</div>${f[2] ? `<div class="fnote">${para(f[2])}</div>` : ''}</div>`).join('')}</div>` : '';
+  const deriv = (c.derivation || []).map(d => `<details class="dv"><summary>${para(d.t)}</summary><ol>${d.s.map(x => `<li>${para(x)}</li>`).join('')}</ol></details>`).join('');
+  const diags = (c.diagrams || []).map(d => `<figure class="figbox">${d.svg}<figcaption>${para(d.cap || '')}</figcaption></figure>`).join('');
+  const solved = (c.solved || []).map((x, i) => `<details class="sv"><summary><b>Q${i + 1}.</b> ${para(x.q)}</summary><ol>${x.s.map(y => `<li>${para(y)}</li>`).join('')}</ol><div class="ans">Answer: ${para(x.a)}</div></details>`).join('');
+  const traps = (c.traps || []).length ? `<ul class="traps">${c.traps.map(x => `<li>${para(x)}</li>`).join('')}</ul>` : '';
+  const pre = (c.prereq || []).filter(p => CON[p]).map(p => `<button class="chipbtn" ${sheet ? 'data-lesson' : 'data-lopen'}="${p}">${CON[p].icon} ${esc(CON[p].title)}</button>`).join('');
+  const nav = [['analogy', 'Analogy', c.analogy], ['explain', 'Explanation', explain], ['formulae', 'Formulae', formulae], ['derive', 'Derivation', deriv], ['figs', 'Diagrams', diags], ['solved', 'Solved sums', solved]].filter(x => x[2]);
+  return `<article class="lpage">
+  <div class="small">${esc(c.section)} · ${esc(c.group)}</div>
+  <h1 class="ltitle">${c.icon} ${esc(c.title)}</h1>
+  ${c.ncert && c.ncert.length ? `<div class="ncert">${c.ncert.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
+  ${pre ? `<div class="small" style="margin-top:10px">Builds on</div><div class="chips">${pre}</div>` : ''}
+  <div class="jump">${nav.map(x => `<button data-jump="${x[0]}">${x[1]}</button>`).join('')}</div>
+  ${part('analogy', '🎭 Analogy', c.analogy ? `<div class="analogy">${para(c.analogy)}</div>` : '')}
+  ${part('explain', '📖 Explanation', explain)}
+  ${part('formulae', '🧮 Formulae', formulae)}
+  ${part('derive', '🔬 Derivations', deriv ? `<p class="small">Tap to open. Try to predict the next step before you read it.</p>${deriv}` : '')}
+  ${part('figs', '📈 Diagrams', diags)}
+  ${part('solved', '✏️ Solved sums', solved ? `<p class="small">Attempt each one on paper first, then open the solution.</p>${solved}` : '')}
+  ${part('traps', '⚠️ Common traps', traps)}
+  ${sheet ? '' : `<div class="lcta"><div class="small">${nq} drill questions on this concept${st.n ? ` · ${Math.round(st.acc * 100)}% recent` : ''}</div>${nq ? `<button class="btn" data-practise="${c.id}">Practise this concept →</button>` : ''}</div>`}
+  </article>`;
+}
+function renderLearn(top = true) {
+  let html;
+  if (LV.id && CON[LV.id]) {
+    const c = CON[LV.id]; const sib = CONS.filter(x => x.section === c.section); const i = sib.findIndex(x => x.id === c.id); const nx = sib[i + 1];
+    html = `<div class="top"><button class="back" data-lback>‹</button><div class="grow"><b style="font-size:18px">Learn</b></div><span class="lvl l${topicStat(c.id).lvl}">${LEVELS[topicStat(c.id).lvl]}</span></div>${conceptHTML(c)}${nx ? `<button class="btn ghost" data-lopen="${nx.id}" style="margin-top:14px">Next: ${nx.icon} ${esc(nx.title)} →</button>` : ''}`;
+  } else {
+    const done = CONS.filter(x => S.read[x.id]).length;
+    html = `<div class="top"><div class="grow"><b style="font-size:18px">Learn</b></div><span class="chip">${done}/${CONS.length} read</span></div>
+    <p class="small" style="margin:12px 0 0">Every concept explained from first principles — analogy, logic, formulae, derivations, diagrams and worked sums. Swipe left for the drills.</p>
+    <div class="tabs">${SECS.map(s => `<button class="tab ${LV.sec === s ? 'on' : ''}" data-lsec="${s}">${s === 'VARC' ? 'Verbal' : s}</button>`).join('')}</div>
+    <input type="search" id="lq" class="lq" placeholder="Search concepts…" value="${esc(LV.q)}"><div id="llist">${learnList()}</div>`;
+  }
+  learnEl.innerHTML = `<div class="scroller">${html}</div>`;
+  if (top) learnEl.firstChild.scrollTop = 0;
+}
+function learnList() {
+  const q = LV.q.trim().toLowerCase(); let g = null, out = '';
+  for (const c of CONS) {
+    if (c.section !== LV.sec) continue;
+    if (q && !(c.title + ' ' + c.group + ' ' + (c.ncert || []).join(' ')).toLowerCase().includes(q)) continue;
+    if (c.group !== g) { g = c.group; out += `<div class="section-title grp">${esc(g)}</div>`; }
+    const st = topicStat(c.id);
+    out += `<button class="node" data-lopen="${c.id}"><div class="ico">${c.icon}</div><div class="meta"><div class="name">${esc(c.title)}</div><div class="sub">${esc((c.ncert || [])[0] || '')}</div>${crowns(st.lvl)}</div>${S.read[c.id] ? '<span class="lvl l1">Read ✓</span>' : '<span class="lvl">New</span>'}</button>`;
+  }
+  return out || '<div class="card small">No concept matches.</div>';
+}
+function openConcept(id, pane) { LV.id = id; LV.sec = CON[id].section; S.read[id] = S.read[id] || Date.now(); save(); renderLearn(); if (pane) goPane(0); }
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-lopen],[data-learn],[data-lback],[data-lsec],[data-jump],[data-practise],#seg [data-pane]'); if (!t) return; const d = t.dataset;
+  if (d.pane != null) return goPane(+d.pane);
+  if (d.lopen) { e.stopPropagation(); return openConcept(d.lopen); }
+  if (d.learn) return openConcept(d.learn, true);
+  if (d.lback != null) { LV.id = null; return renderLearn(); }
+  if (d.lsec) { LV.sec = d.lsec; return renderLearn(); }
+  if (d.jump) { const box = t.closest('.lpage'); const el = box && box.querySelector(`[data-k="${d.jump}"]`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+  if (d.practise) { startSession(buildTopicSet(d.practise, 10), 'topic', shortName(d.practise)); goPane(1); }
+});
+document.addEventListener('input', e => { if (e.target.id === 'lq') { LV.q = e.target.value; $('#llist').innerHTML = learnList(); } });
+pager.addEventListener('scroll', () => { const p = pager.scrollLeft / Math.max(1, pager.clientWidth); seg.style.setProperty('--p', Math.min(1, Math.max(0, p))); const on = p > .5 ? 1 : 0; seg.querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', i === on)); }, { passive: true });
 
 // ---------- events ----------
 document.addEventListener('click', e => {
@@ -378,6 +456,7 @@ function mockMenu() {
 }
 function route() {
   const h = location.hash || '#/'; clearInterval(timerH);
+  document.body.classList.toggle('focus', h === '#/exam'); if (h === '#/exam') goPane(1);
   if (h === '#/play') return SES ? renderQ() : (location.hash = '#/', viewHome());
   if (h === '#/exam') { if (EX) { timerH = setInterval(tickExam, 1000); return renderExam(); } location.hash = '#/'; return viewHome(); }
   if (h.startsWith('#/topic/')) return viewTopic(decodeURIComponent(h.slice(8)));
@@ -389,6 +468,6 @@ window.addEventListener('hashchange', route);
   applyTheme();
   try { await loadData(); } catch (e) { app.innerHTML = '<div class="boot">Could not load data. Open this app through a web server (see README).</div>'; return; }
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => { });
-  window.__ugat = { S: () => S, DATA, BY, buildDaily, startSession };
-  route();
+  window.__ugat = { S: () => S, DATA, BY, CON, buildDaily, startSession, openConcept, goPane };
+  renderLearn(); route();
 })();

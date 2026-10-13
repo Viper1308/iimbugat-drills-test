@@ -1,9 +1,15 @@
 # UGAT Drills — IIM Bangalore UG Admissions Test practice app
 
-A web app (works offline, installable on a phone) with 5,620 practice questions plus the 2025 paper (60): QADI 2,548 · LR 1,820 · Verbal 1,252 .
-Of these, 2,023 are **exam level** (tier 3): multi-step questions modelled on the 2025 paper and the IIMB sample papers. The rest are standard drills (tier 2) and warm-ups (tier 1).
-Lessons for 57 topics, daily mixed practice (100/150/200), spaced review, hints, XP/streak/combo, timed mocks with real −⅓ marking
-and the 30/20/20 section weights, stats, and a JSON export for ASAP. All progress stays in the browser (no account, no server).
+A web app (works offline, installable on a phone) with a **Learn** panel and a **Drills** panel side by side.
+
+**Learn** (left): 70 concept pages — 52 Quant & DI concepts mapped to NCERT Class 10–12 (plus Class 6–9 foundations), 11 Logical Reasoning and 7 Verbal. Every page has: analogy → explanation from first principles → formulae → derivations → diagrams/graphs → solved sums → common traps. About 22,500 words, 69 diagrams, 105 derivations, 210 solved sums.
+**Drills** (right): 6,922 questions (QADI 3,850 · LR 1,820 · Verbal 1,252) plus the 2025 paper, every one tagged to a concept, so each lesson has its own drill set. Daily mixed practice, spaced review, hints, XP/streak, timed mocks with the real −⅓ marking and 30/20/20 weights, stats and a JSON export for ASAP. Progress stays in the browser.
+
+## How the two panels work
+- **Phone / home-screen app:** you start on Learn. Swipe left for Drills, swipe right to come back (or tap the tabs at the top). "Practise this concept" on a lesson jumps you to the drills; "Read the lesson" on a concept's drill page, jumps you back.
+- **During a question:** after answering, "Review the lesson" opens the concept as a pop-up so you keep your place.
+- **Mock tests:** the Learn panel is hidden while a mock runs.
+- **Laptop / tablet (wide screen):** both panels sit side by side.
 
 ## Try it on your computer first
 1. Install Node.js from nodejs.org (the "LTS" button), or Python.
@@ -28,4 +34,5 @@ Progress lives in each device's browser; a Supabase sync can be added later if y
 
 ## Notes
 - 11 official-paper questions depend on a figure and are left out of practice.
-- Native iOS/macOS versions can be built later from this same question data.
+- Native iOS/macOS versions can be built later from this same question and lesson data.
+- Progress is now tracked per concept (70) instead of per topic, so progress saved by the previous version will not carry over.

@@ -13,7 +13,13 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div id="app"><div class="boot">Loading questions…</div></div>
+<div id="shell">
+  <nav id="seg" aria-label="Switch panel"><button data-pane="0" class="on">📘 Learn</button><button data-pane="1">🎯 Drills</button><i id="segbar"></i></nav>
+  <div id="pager">
+    <section id="learn" class="pane" aria-label="Learn"></section>
+    <main id="app" class="pane" aria-label="Drills"><div class="boot">Loading…</div></main>
+  </div>
+</div>
 <div id="toast" class="toast" aria-live="polite"></div>
 <script type="module" src="app.js"></script>
 </body>
